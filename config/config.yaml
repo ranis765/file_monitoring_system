@@ -1,0 +1,113 @@
+# Общие настройки
+environment: "development"
+
+# Настройки API сервера
+api_server:
+  host: "0.0.0.0"
+  port: 8000
+  base_url: "http://localhost:8000"  # Для клиентов
+  reload: true  # Для разработки
+
+# Настройки базы данных
+database:
+  host: "localhost"
+  port: 5432
+  name: "file_monitoring"
+  user: "monitor_user"
+  password: "secure_password_123"
+  url: "postgresql://monitor_user:secure_password_123@localhost:5432/file_monitoring"
+
+# Настройки мониторинга
+monitoring:
+  # Папки для мониторинга
+  watch_paths:
+    - "./monitor"
+  
+  # Расширения файлов для отслеживания
+  file_extensions:
+    - ".py"
+    - ".txt"
+    - ".json"
+    - ".yaml"
+    - ".yml"
+    - ".md"
+    - ".doc"
+    - ".docx"
+    - ".xls"
+    - ".xlsx"
+    - ".ppt"
+    - ".pptx"
+    - ".pdf"
+    - ".dwg"
+    - ".dxf"
+    - ".stp"
+    - ".iges"
+  
+  # Игнорируемые паттерны (улучшенные)
+  ignore_patterns:
+    - "~*"           # Все файлы, начинающиеся с ~
+    - "*.tmp"        # Все .tmp файлы
+    - "*.temp"       # Все .temp файлы
+    - ".~lock.*"     # Файлы блокировки
+    - "~$*"          # Office временные файлы (начинающиеся с ~$)
+    - "~WR*"         # Word временные файлы
+    - "~WL*"         # Word временные файлы
+    - "~RF*"         # Office временные файлы
+    - "._*"          # Системные файлы macOS
+    - ".DS_Store"    # Системные файлы macOS
+    - "Thumbs.db"    # Системные файлы Windows
+    - "desktop.ini"  # Системные файлы Windows
+  
+  # Игнорируемые расширения
+  ignore_extensions:
+    - ".tmp"
+    - ".temp"
+    - ".log"
+    - ".cache"
+    - ".swp"
+    - ".swo"
+    - ".bak"
+    - ".backup"
+
+  # Игнорируемые директории
+  ignore_dirs:
+    - "__pycache__"
+    - ".git"
+    - ".svn"
+    - ".idea"
+    - ".vscode"
+    - "node_modules"
+    - "temp"
+    - "tmp"
+    - "cache"
+    - "logs"
+    - "backup"
+    - ".Trash"
+    - ".Trashes"
+    - ".Spotlight-V100"
+    - ".fseventsd"
+  
+  # Настройки хеширования
+  hashing:
+    enabled: true
+    method: "sha256"
+    max_file_size_mb: 50
+  
+  # Настройки сессий - УМЕНЬШЕНЫ ТАЙМАУТЫ ДЛЯ ТЕСТИРОВАНИЯ
+  sessions:
+    session_timeout_minutes: 1      # 1 минута для тестирования
+    max_session_hours: 3
+    resume_window_hours: 1
+  
+  background_check_interval: 10     # Уменьшено до 10 секунд
+
+# Настройки API клиента
+api_client:
+  base_url: "http://localhost:8000"
+  timeout: 10
+  retry_attempts: 3
+
+# Настройки логирования
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
