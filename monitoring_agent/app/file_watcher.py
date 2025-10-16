@@ -1,3 +1,4 @@
+# file_watcher.py
 import time
 from datetime import datetime
 from watchdog.observers import Observer
@@ -15,18 +16,22 @@ class FileMonitorHandler(FileSystemEventHandler):
     
     def on_created(self, event):
         if not event.is_directory:
+            self.logger.debug(f"File created: {event.src_path}")
             self.event_handler.handle_file_event('created', event.src_path)
     
     def on_modified(self, event):
         if not event.is_directory:
+            self.logger.debug(f"File modified: {event.src_path}")
             self.event_handler.handle_file_event('modified', event.src_path)
     
     def on_deleted(self, event):
         if not event.is_directory:
+            self.logger.debug(f"File deleted: {event.src_path}")
             self.event_handler.handle_file_event('deleted', event.src_path)
     
     def on_moved(self, event):
         if not event.is_directory:
+            self.logger.debug(f"File moved: {event.src_path} -> {event.dest_path}")
             self.event_handler.handle_file_event('moved', event.src_path, event.dest_path)
 
 class FileWatcher:
@@ -37,13 +42,17 @@ class FileWatcher:
             self.config = monitoring_config
             
         self.logger = setup_logger(__name__)
+        
+        # Используем polling только если явно указано в конфиге
         self.use_polling = self.config.get('use_polling', False)
         if self.use_polling:
             self.observer = PollingObserver()
+            self.logger.info("Using polling observer")
         else:
             self.observer = Observer()
+            self.logger.info("Using native observer")
             
-        # Передаем конфигурацию в EventHandler
+        # Инициализируем обработчик событий
         self.event_handler = EventHandler(monitoring_config=self.config)
         self.monitor_handler = FileMonitorHandler(self.event_handler)
         
@@ -58,7 +67,7 @@ class FileWatcher:
         
     def start(self):
         """Запускает мониторинг"""
-        watch_paths = self.config.get('watch_paths', ['./monitor'])
+        watch_paths = self.config.get('watch_paths', ['C:\\SharedFolder'])
         
         for path in watch_paths:
             try:
@@ -79,12 +88,12 @@ class FileWatcher:
             self.logger.error("❌ Cannot connect to API server")
             return
         
-        # ЗАПУСКАЕМ ФОНОВУЮ ПРОВЕРКУ
+        # Запускаем фоновую проверку
         self.background_checker.start()
         
-        # Основной цикл (только для статистики)
+        # Основной цикл (для статистики и управления)
         try:
-            stats_interval = 30  # Логируем статистику каждые 30 секунд
+            stats_interval = 30
             while True:
                 time.sleep(stats_interval)
                 
@@ -92,7 +101,9 @@ class FileWatcher:
                 stats = self.event_handler.get_stats()
                 active_sessions = stats['active_sessions']
                 
-                self.logger.info(f"📊 Stats: {active_sessions} active sessions, {stats.get('expired_sessions', 0)} expired")
+                self.logger.info(f"📊 Stats: {active_sessions} active sessions, "
+                               f"{stats.get('expired_sessions', 0)} expired, "
+                               f"{stats.get('audit_events_used', 0)} audit events used")
                 
                 # Детальная информация об активных сессиях
                 if active_sessions > 0:
@@ -111,7 +122,9 @@ class FileWatcher:
     
     def stop(self):
         """Останавливает мониторинг"""
+        self.logger.info("🛑 Stopping file watcher...")
         self.background_checker.stop()
         self.observer.stop()
         self.observer.join()
-        self.logger.info("🛑 File monitoring stopped")
+        self.event_handler.cleanup()
+        self.logger.info("✅ File monitoring stopped")

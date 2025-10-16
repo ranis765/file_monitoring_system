@@ -1,3 +1,4 @@
+# main.py (сервер)
 import sys
 import os
 
@@ -12,7 +13,7 @@ from shared.config_loader import get_api_config
 from . import database, models, crud, schemas
 from typing import List, Optional
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Загружаем конфигурацию API
 api_config = get_api_config()
@@ -183,6 +184,30 @@ async def handle_file_moved(db: Session, event_data: dict, file_hash: str = None
 
 async def handle_file_created(db: Session, user_id: uuid.UUID, file_id: uuid.UUID, event_data: dict, file_hash: str = None, resume_count: int = 0):
     """Обрабатывает создание файла - создает новую сессию"""
+    # ПРОВЕРКА ДУБЛИРОВАНИЯ СЕССИЙ - ДОБАВЛЕНО
+    active_sessions = crud.get_active_sessions_by_user_and_file(db, user_id, file_id)
+    if active_sessions:
+        print(f"⚠️ Active session already exists for file, updating instead of creating new")
+        session = active_sessions[0]
+        session.last_activity = datetime.fromisoformat(event_data.get('event_timestamp'))
+        if file_hash:
+            session.hash_before = file_hash
+        session.resume_count = resume_count
+        db.commit()
+        db.refresh(session)
+        
+        # Создаем событие created
+        event_record = schemas.FileEventCreate(
+            session_id=session.id,
+            event_type='created',
+            file_hash=file_hash,
+            event_timestamp=datetime.fromisoformat(event_data.get('event_timestamp'))
+        )
+        crud.create_file_event(db, event_record)
+        
+        print(f"🔄 Updated existing session {session.id} for created file")
+        return {"action": "session_updated", "session_id": str(session.id), "resumed": False}
+    
     # Проверяем, есть ли недавно закрытая сессия для возобновления
     recent_session = None
     if resume_count > 0:
@@ -360,7 +385,7 @@ async def handle_file_closed(db: Session, session_id: str, file_hash: str = None
                     ended_at = datetime.fromisoformat(event_data['event_timestamp'])
                 else:
                     # Используем текущее время
-                    ended_at = datetime.utcnow()
+                    ended_at = datetime.now()
                 
                 session.ended_at = ended_at
                 
@@ -418,12 +443,18 @@ async def create_session(session_data: dict, db: Session = Depends(get_db)):
             file_data = schemas.FileCreate(file_path=file_path, file_name=file_name)
             file = crud.create_file(db, file_data)
         
+        # ПРОВЕРКА ДУБЛИРОВАНИЯ - ДОБАВЛЕНО
+        active_sessions = crud.get_active_sessions_by_user_and_file(db, user.id, file.id)
+        if active_sessions:
+            print(f"⚠️ Active session already exists, returning existing: {active_sessions[0].id}")
+            return {"id": str(active_sessions[0].id), "status": "existing"}
+        
         # Создаем сессию
         session_data = schemas.FileSessionCreate(
             user_id=user.id,
             file_id=file.id,
-            started_at=datetime.utcnow(),
-            last_activity=datetime.utcnow(),
+            started_at=datetime.now(),
+            last_activity=datetime.now(),
             hash_before=session_data.get('file_hash'),
             resume_count=session_data.get('resume_count', 0)
         )
@@ -502,13 +533,20 @@ async def create_comment(comment: schemas.CommentCreate, db: Session = Depends(g
         if existing_comment:
             raise HTTPException(status_code=400, detail="Comment already exists for this session")
         
+        session.ended_at = datetime.now()
+        session.is_commented = True
+
         # Создаем комментарий
         db_comment = crud.create_comment(db, comment)
+
+        db.commit()
+
         return db_comment
         
     except HTTPException:
         raise
     except Exception as e:
+        db.rollback()
         raise HTTPException(status_code=500, detail=f"Error creating comment: {str(e)}")
 
 @app.get("/api/comments", response_model=List[schemas.CommentWithUser])
@@ -675,6 +713,211 @@ async def get_session_details(session_id: str, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting session details: {str(e)}")
 
+# [file name]: main.py (ДОПОЛНЕННАЯ ВЕРСИЯ - добавляем в конец файла)
+
+# НОВЫЕ ЭНДПОИНТЫ ДЛЯ ОПРЕДЕЛЕНИЯ ТЕКУЩИХ РЕДАКТОРОВ
+@app.get("/api/current-editors/{file_path}")
+async def get_current_editors(file_path: str, db: Session = Depends(get_db)):
+    """Возвращает текущих редакторов файла на основе активных сессий"""
+    try:
+        # Находим файл
+        file = crud.get_file_by_path(db, file_path)
+        if not file:
+            return {"current_editors": [], "file_exists": False}
+        
+        # Находим активные сессии для этого файла
+        active_sessions = db.query(models.FileSession).filter(
+            models.FileSession.file_id == file.id,
+            models.FileSession.ended_at.is_(None)
+        ).all()
+        
+        current_editors = []
+        for session in active_sessions:
+            user = crud.get_user(db, session.user_id)
+            if user:
+                current_editors.append({
+                    "username": user.username,
+                    "last_activity": session.last_activity.isoformat(),
+                    "session_id": str(session.id)
+                })
+        
+        # Сортируем по последней активности (сначала самые активные)
+        current_editors.sort(key=lambda x: x["last_activity"], reverse=True)
+        
+        return {
+            "file_path": file_path,
+            "file_name": file.file_name,
+            "current_editors": current_editors,
+            "total_editors": len(current_editors),
+            "file_exists": True
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting current editors: {str(e)}")
+
+@app.get("/api/multi-user-files")
+async def get_multi_user_files(db: Session = Depends(get_db)):
+    """Возвращает файлы с несколькими активными редакторами"""
+    try:
+        # Находим файлы с более чем одной активной сессией
+        multi_user_files = []
+        
+        # Получаем все активные сессии сгруппированные по файлам
+        active_sessions_by_file = db.query(
+            models.FileSession.file_id,
+            models.File.file_path,
+            models.File.file_name
+        ).join(
+            models.File, models.FileSession.file_id == models.File.id
+        ).filter(
+            models.FileSession.ended_at.is_(None)
+        ).group_by(
+            models.FileSession.file_id,
+            models.File.file_path,
+            models.File.file_name
+        ).having(
+            db.func.count(models.FileSession.id) > 1
+        ).all()
+        
+        for file_id, file_path, file_name in active_sessions_by_file:
+            # Получаем редакторов для этого файла
+            editors = db.query(
+                models.User.username,
+                models.FileSession.last_activity
+            ).join(
+                models.FileSession, models.FileSession.user_id == models.User.id
+            ).filter(
+                models.FileSession.file_id == file_id,
+                models.FileSession.ended_at.is_(None)
+            ).all()
+            
+            multi_user_files.append({
+                "file_path": file_path,
+                "file_name": file_name,
+                "editors": [{"username": editor[0], "last_activity": editor[1].isoformat()} for editor in editors],
+                "editor_count": len(editors)
+            })
+        
+        return {
+            "multi_user_files": multi_user_files,
+            "total_multi_user_files": len(multi_user_files)
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting multi-user files: {str(e)}")
+
+@app.put("/api/users/{user_id}/username")
+async def update_username(
+    user_id: str, 
+    username_update: schemas.UsernameUpdate,  # Используем схему
+    db: Session = Depends(get_db)
+):
+    """Обновляет username пользователя"""
+    try:
+        # Проверяем валидность UUID
+        try:
+            user_uuid = uuid.UUID(user_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid user ID format")
+        
+        # Получаем пользователя
+        user = crud.get_user(db, user_uuid)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        new_username = username_update.username
+        
+        # Проверяем, что новый username не пустой
+        if not new_username.strip():
+            raise HTTPException(status_code=400, detail="Username cannot be empty")
+        
+        # Проверяем, не занят ли username другим пользователем
+        existing_user = crud.get_user_by_username(db, new_username)
+        if existing_user and existing_user.id != user_uuid:
+            raise HTTPException(status_code=400, detail="Username already taken")
+        
+        # Сохраняем старый username для логов
+        old_username = user.username
+        
+        # Обновляем username
+        user.username = new_username
+        db.commit()
+        db.refresh(user)
+        
+        print(f"✅ Updated username for user {user_id}: {old_username} -> {new_username}")
+        
+        return {
+            "id": str(user.id),
+            "old_username": old_username,
+            "new_username": user.username,
+            "email": user.email,
+            "updated_at": datetime.now().isoformat()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error updating username: {str(e)}")
+
+@app.get("/api/user-activity/{username}")
+async def get_user_activity(username: str, db: Session = Depends(get_db)):
+    """Возвращает активность пользователя"""
+    try:
+        user = crud.get_user_by_username(db, username)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Получаем все сессии пользователя
+        all_sessions = db.query(models.FileSession).filter(
+            models.FileSession.user_id == user.id
+        ).all()
+
+        active_files = []
+        recent_files = []
+
+        for session in all_sessions:
+            # Получаем информацию о файле
+            file = crud.get_file(db, session.file_id)
+            if not file:
+                continue
+
+            session_info = {
+                "file_path": file.file_path,
+                "file_name": file.file_name,
+                "session_started": session.started_at.isoformat(),
+                "last_activity": session.last_activity.isoformat(),
+                "session_id": str(session.id),
+                "resume_count": session.resume_count,
+                "is_commented": session.is_commented
+            }
+
+            if session.ended_at is None:
+                # Активная сессия
+                active_files.append(session_info)
+            else:
+                # Закрытая сессия (проверяем, была ли она в последние 24 часа)
+                time_diff = datetime.now() - session.ended_at
+                if time_diff <= timedelta(hours=24):
+                    session_info["session_ended"] = session.ended_at.isoformat()
+                    session_info["session_duration"] = (session.ended_at - session.started_at).total_seconds()
+                    recent_files.append(session_info)
+
+        return {
+            "username": username,
+            "user_id": str(user.id),
+            "active_files": active_files,
+            "recent_files": recent_files,
+            "active_count": len(active_files),
+            "recent_count": len(recent_files)
+        }
+        
+    except Exception as e:
+        print(f"❌ Error in get_user_activity: {str(e)}")
+        import traceback
+        print(f"🔍 Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error getting user activity: {str(e)}")
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=8000)

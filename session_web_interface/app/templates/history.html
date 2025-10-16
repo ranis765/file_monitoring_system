@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block title %}History - Session Manager{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1 class="mb-4">
+            <i class="fas fa-history me-2"></i>Editing History
+        </h1>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-list me-2"></i>Session History with Comments
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if sessions %}
+                <div class="row">
+                    {% for session in sessions %}
+                    <div class="col-12 mb-4">
+                        <div class="card {% if session.comment %}border-success{% else %}border-warning{% endif %}">
+                            <div class="card-header {% if session.comment %}bg-success text-white{% endif %}">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <h6 class="card-title mb-0">
+                                        <i class="fas fa-file me-1"></i>{{ session.file_name }}
+                                    </h6>
+                                    <span class="badge {% if session.comment %}bg-light text-dark{% else %}bg-warning{% endif %}">
+                                        {% if session.comment %}Commented{% else %}No Comment{% endif %}
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <p><strong>File Path:</strong> {{ session.file_path }}</p>
+                                        <p><strong>Started:</strong> {{ session.started_at[:19] }}</p>
+                                        <p><strong>Ended:</strong> {{ session.ended_at[:19] if session.ended_at else 'Still active' }}</p>
+                                        <p><strong>Resume Count:</strong> {{ session.resume_count }}</p>
+                                    </div>
+                                    <div class="col-md-6">
+                                        {% if session.comment %}
+                                        <div class="card bg-light">
+                                            <div class="card-body">
+                                                <h6 class="card-title">
+                                                    <i class="fas fa-comment me-1"></i>Comment
+                                                </h6>
+                                                <p class="card-text">{{ session.comment.content }}</p>
+                                                <div class="d-flex justify-content-between text-muted">
+                                                    <small>
+                                                        <strong>Change Type:</strong> 
+                                                        {{ session.comment.change_type|replace('_', ' ')|title }}
+                                                    </small>
+                                                    <small>{{ session.comment.created_at[:19] }}</small>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        {% else %}
+                                        <div class="text-center py-3">
+                                            <i class="fas fa-exclamation-triangle text-warning fa-2x mb-2"></i>
+                                            <p class="text-muted">No comment added for this session</p>
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="text-center py-5">
+                    <i class="fas fa-folder-open fa-3x text-muted mb-3"></i>
+                    <p class="text-muted">No session history found</p>
+                    <a href="/sessions" class="btn btn-primary">
+                        <i class="fas fa-edit me-1"></i>Go to Sessions
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

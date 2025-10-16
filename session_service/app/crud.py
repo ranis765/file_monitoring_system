@@ -1,3 +1,4 @@
+# crud.py (сервер)
 from sqlalchemy.orm import Session
 from . import models, schemas
 import uuid
@@ -50,7 +51,7 @@ def get_file_session(db: Session, session_id: uuid.UUID):
 def update_file_session_activity(db: Session, session_id: uuid.UUID):
     db_session = get_file_session(db, session_id)
     if db_session:
-        db_session.last_activity = datetime.utcnow()
+        db_session.last_activity = datetime.now()
         db.commit()
         db.refresh(db_session)
     return db_session
@@ -112,14 +113,14 @@ def close_session(db: Session, session_id: uuid.UUID):
     """Закрывает сессию"""
     session = get_file_session(db, session_id)
     if session:
-        session.ended_at = datetime.utcnow()
+        session.ended_at = datetime.now()
         db.commit()
         db.refresh(session)
     return session
 
 def get_recent_closed_session(db: Session, user_id: uuid.UUID, file_id: uuid.UUID, hours: int = 1):
     """Получает недавно закрытую сессию для возможного возобновления"""
-    cutoff_time = datetime.utcnow() - timedelta(hours=hours)
+    cutoff_time = datetime.now() - timedelta(hours=hours)
     return db.query(models.FileSession).filter(
         models.FileSession.user_id == user_id,
         models.FileSession.file_id == file_id,

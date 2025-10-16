@@ -140,3 +140,8 @@ class SessionCommentResponse(BaseModel):
     user: User
     
     model_config = ConfigDict(from_attributes=True)
+
+class UsernameUpdate(BaseModel):
+    username: str
+
+    model_config = ConfigDict(from_attributes=True)

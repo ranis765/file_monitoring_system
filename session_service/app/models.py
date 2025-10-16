@@ -12,7 +12,7 @@ class User(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     username = Column(String(100), unique=True, nullable=False)
     email = Column(String(255))
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
 
 class File(Base):
     __tablename__ = "files"
@@ -20,7 +20,7 @@ class File(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     file_path = Column(String(1000), unique=True, nullable=False)
     file_name = Column(String(255), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
 
 class FileSession(Base):
     __tablename__ = "file_sessions"
@@ -55,7 +55,7 @@ class Comment(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     content = Column(Text, nullable=False)
     change_type = Column(String(50), nullable=False, default='other')
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
 
 class Report(Base):
     __tablename__ = "reports"
@@ -65,4 +65,4 @@ class Report(Base):
     report_type = Column(String(20), default='daily')
     file_format = Column(String(10), nullable=False)
     file_path = Column(String(1000))
-    generated_at = Column(DateTime, default=datetime.utcnow)
+    generated_at = Column(DateTime, default=datetime.now)

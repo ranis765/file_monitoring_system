@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block title %}Select User - Session Manager{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6 col-lg-4">
+        <div class="card shadow">
+            <div class="card-body p-5">
+                <h2 class="card-title text-center mb-4">
+                    <i class="fas fa-user me-2"></i>Введите ваше имя пользователя
+                </h2>
+                
+                <form method="post" action="/login" accept-charset="UTF-8">
+                    <div class="mb-3">
+                        <label for="username" class="form-label">Имя пользователя</label>
+                        <input type="text" class="form-control" id="username" name="username" 
+                               placeholder="Введите ваше имя" required autofocus>
+                        <div class="form-text">
+                            Используйте то же имя, что и в системе мониторинга файлов
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary w-100 py-2">
+                        <i class="fas fa-sign-in-alt me-2"></i>Продолжить
+                    </button>
+                </form>
+                
+                <div class="mt-3 text-center">
+                    <small class="text-muted">
+                        Поддерживаются русские и английские символы
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

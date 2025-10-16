@@ -1,0 +1,75 @@
+.session-card {
+    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.session-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.card-header {
+    font-weight: 600;
+}
+
+.badge {
+    font-size: 0.75em;
+}
+
+.table th {
+    border-top: none;
+    font-weight: 600;
+}
+
+.alert {
+    border: none;
+    border-radius: 8px;
+}
+
+.btn {
+    border-radius: 6px;
+}
+
+.navbar-brand {
+    font-weight: 600;
+}
+
+.fas, .fab {
+    opacity: 0.9;
+}
+
+.card {
+    border: none;
+    border-radius: 10px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.card .card-header {
+    border-radius: 10px 10px 0 0 !important;
+}
+
+/* Custom colors for change type badges */
+.change-type-technical_changes { background-color: #dc3545; }
+.change-type-design_changes { background-color: #6f42c1; }
+.change-type-content_changes { background-color: #fd7e14; }
+.change-type-bug_fixes { background-color: #20c997; }
+.change-type-optimization { background-color: #0dcaf0; }
+.change-type-refactoring { background-color: #ffc107; color: #000; }
+.change-type-new_feature { background-color: #198754; }
+.change-type-documentation { background-color: #6c757d; }
+.change-type-other { background-color: #adb5bd; }
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .container {
+        padding-left: 15px;
+        padding-right: 15px;
+    }
+    
+    .card-body {
+        padding: 1rem;
+    }
+    
+    .btn {
+        font-size: 0.9rem;
+    }
+}

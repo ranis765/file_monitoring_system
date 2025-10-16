@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}Login - Session Manager{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6 col-lg-4">
+        <div class="card shadow">
+            <div class="card-body p-5">
+                <h2 class="card-title text-center mb-4">
+                    <i class="fas fa-sign-in-alt me-2"></i>Login
+                </h2>
+                
+                <form method="post" action="/login">
+                    <div class="mb-3">
+                        <label for="username" class="form-label">Username</label>
+                        <input type="text" class="form-control" id="username" name="username" 
+                               placeholder="Enter your username" required>
+                        <div class="form-text">
+                            Use the same username that appears in your file monitoring system
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="fas fa-sign-in-alt me-2"></i>Enter System
+                    </button>
+                </form>
+                
+                <div class="mt-4 p-3 bg-light rounded">
+                    <h6 class="mb-2">Demo Usernames:</h6>
+                    <small class="text-muted">
+                        Use any username that matches your monitoring system. 
+                        The system will create user records automatically.
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

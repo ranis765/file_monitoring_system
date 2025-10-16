@@ -1,9 +1,10 @@
+# config.yaml
 # Общие настройки
 environment: "development"
 
 # Настройки API сервера
 api_server:
-  host: "0.0.0.0"
+  host: "127.0.0.1"
   port: 8000
   base_url: "http://localhost:8000"  # Для клиентов
   reload: true  # Для разработки
@@ -43,7 +44,7 @@ monitoring:
     - ".stp"
     - ".iges"
   
-  # Игнорируемые паттерны (улучшенные)
+  # Игнорируемые паттерны (улучшенные) - ОБНОВЛЕНО
   ignore_patterns:
     - "~*"           # Все файлы, начинающиеся с ~
     - "*.tmp"        # Все .tmp файлы
@@ -57,6 +58,9 @@ monitoring:
     - ".DS_Store"    # Системные файлы macOS
     - "Thumbs.db"    # Системные файлы Windows
     - "desktop.ini"  # Системные файлы Windows
+    - "~$*.xlsx"     # Excel временные файлы - ДОБАВЛЕНО
+    - "~$*.docx"     # Word временные файлы - ДОБАВЛЕНО
+    - "~$*.pptx"     # PowerPoint временные файлы - ДОБАВЛЕНО
   
   # Игнорируемые расширения
   ignore_extensions:

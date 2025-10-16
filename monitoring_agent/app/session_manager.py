@@ -1,3 +1,4 @@
+# session_manager.py
 import os
 import uuid
 from datetime import datetime, timedelta
@@ -14,7 +15,7 @@ class SessionManager:
     def set_config(self, config: dict):
         """Устанавливает конфигурацию"""
         self.config = config
-        timeout = self.config.get('session_timeout_minutes', 1)
+        timeout = self.config.get('session_timeout_minutes', 30)
         self.logger.info(f"⚙️ Session config: timeout={timeout}min, max_age={self.config.get('max_session_hours', 3)}h")
     
     def _get_session_key(self, file_path: str, username: str) -> str:
@@ -56,6 +57,12 @@ class SessionManager:
         resumed_session.pop('ended_at', None)
         resumed_session.pop('hash_after', None)
         
+        # Сохраняем информацию о со-редакторах при возобновлении
+        if 'co_editors' in session_data:
+            resumed_session['co_editors'] = session_data['co_editors']
+        if 'is_multi_user' in session_data:
+            resumed_session['is_multi_user'] = session_data['is_multi_user']
+        
         # Возвращаем в активные сессии
         self.active_sessions[session_key] = resumed_session
         
@@ -87,7 +94,7 @@ class SessionManager:
     
     def _is_session_expired(self, session_data: Dict) -> bool:
         """Проверяет истекла ли сессия"""
-        timeout_minutes = self.config.get('session_timeout_minutes', 1)
+        timeout_minutes = self.config.get('session_timeout_minutes', 30)
         max_age_hours = self.config.get('max_session_hours', 3)
         
         last_activity = session_data['last_activity']
@@ -109,7 +116,7 @@ class SessionManager:
         return False
     
     def check_and_close_expired_sessions(self) -> List[Dict]:
-        """Проверяет и закрывает все просроченные сессии - ИСПРАВЛЕННАЯ ВЕРСИЯ"""
+        """Проверяет и закрывает все просроченные сессии"""
         expired_sessions = []
         
         total_sessions = len(self.active_sessions)
@@ -158,11 +165,13 @@ class SessionManager:
         recently_closed = self._find_recently_closed(session_key, resume_window_hours)
         
         if recently_closed:
+            # Возобновляем сессию
             return self._resume_session(recently_closed, file_hash)
         else:
-            return self.create_session(file_path, username, file_hash)
+            # Создаем новую сессию
+            return self._create_new_session(file_path, username, file_hash)
     
-    def create_session(self, file_path: str, username: str, file_hash: str = None) -> Dict:
+    def _create_new_session(self, file_path: str, username: str, file_hash: str = None) -> Dict:
         """Создает новую сессию"""
         session_key = self._get_session_key(file_path, username)
         
@@ -173,97 +182,97 @@ class SessionManager:
             'username': username,
             'started_at': datetime.now(),
             'last_activity': datetime.now(),
+            'resume_count': 0,
             'hash_before': file_hash,
-            'events': [],
-            'resume_count': 0
+            'hash_after': None,
+            'events': []
         }
         
         self.active_sessions[session_key] = session_data
-        self.logger.info(f"✅ Created session for {file_path}")
-        
-        return session_data
-    
-    def update_session(self, file_path: str, username: str, file_hash: str = None) -> Dict:
-        """Обновляет существующую сессию или создает новую"""
-        session_data = self.get_active_session(file_path, username)
-        
-        if session_data:
-            # Обновляем существующую сессию
-            if file_hash:
-                session_data['hash_after'] = file_hash
-            session_data['last_activity'] = datetime.now()
-            self.logger.debug(f"📝 Updated session for {file_path}")
-        else:
-            # Создаем новую сессию
-            session_data = self.create_session(file_path, username, file_hash)
+        self.logger.info(f"🆕 New session created: {file_path} by {username}")
         
         return session_data
     
     def close_session(self, file_path: str, username: str, file_hash: str = None) -> Optional[Dict]:
-        """Закрывает сессию - ИСПРАВЛЕННАЯ ВЕРСИЯ"""
+        """Закрывает сессию"""
         session_key = self._get_session_key(file_path, username)
-        session_data = self.active_sessions.pop(session_key, None)
         
-        if session_data:
-            # Устанавливаем время окончания - ВАЖНО: ДОБАВЛЕНО ВРЕМЯ ЗАКРЫТИЯ
-            ended_at = datetime.now()
-            session_data['ended_at'] = ended_at
+        if session_key not in self.active_sessions:
+            self.logger.warning(f"❌ No active session to close: {session_key}")
+            return None
+        
+        session_data = self.active_sessions[session_key]
+        
+        # Обновляем данные для закрытия
+        session_data['ended_at'] = datetime.now()
+        session_data['hash_after'] = file_hash
+        
+        # Сохраняем в историю закрытых сессий
+        if session_key not in self.closed_sessions:
+            self.closed_sessions[session_key] = []
+        
+        self.closed_sessions[session_key].append(session_data.copy())
+        
+        # Ограничиваем историю до 5 последних сессий
+        if len(self.closed_sessions[session_key]) > 5:
+            self.closed_sessions[session_key] = self.closed_sessions[session_key][-5:]
+        
+        # Удаляем из активных сессий
+        del self.active_sessions[session_key]
+        
+        self.logger.info(f"🔒 Session closed: {file_path} by {username}")
+        
+        return session_data
+    
+    def cleanup_expired_sessions(self, event_handler) -> List[Dict]:
+        """Очищает просроченные сессии и возвращает данные для обработки"""
+        expired_sessions = self.check_and_close_expired_sessions()
+        
+        for session_data in expired_sessions:
+            file_path = session_data['file_path']
+            username = session_data['username']
             
-            if file_hash:
+            # Получаем хеш файла если он существует
+            file_hash = None
+            if os.path.exists(file_path) and event_handler.config.get('hashing', {}).get('enabled', True):
+                file_hash = event_handler.hash_calculator.calculate_file_hash_with_retry(file_path)
                 session_data['hash_after'] = file_hash
             
-            # Сохраняем в историю закрытых сессий
-            if session_key not in self.closed_sessions:
-                self.closed_sessions[session_key] = []
-            self.closed_sessions[session_key].append(session_data)
+            # Отправляем событие закрытия
+            event_data = {
+                'file_path': file_path,
+                'file_name': session_data['file_name'],
+                'event_type': 'closed',
+                'file_hash': file_hash,
+                'user_id': username,
+                'session_id': session_data['session_id'],
+                'resume_count': session_data.get('resume_count', 0),
+                'session_started_at': session_data['started_at'].isoformat(),
+                'session_ended_at': session_data['ended_at'].isoformat(),
+                'source': 'background_checker',
+                'event_timestamp': datetime.now().isoformat()
+            }
             
-            # Ограничиваем историю
-            if len(self.closed_sessions[session_key]) > 10:
-                self.closed_sessions[session_key] = self.closed_sessions[session_key][-10:]
-            
-            # Логируем с информацией о времени сессии
-            session_duration = ended_at - session_data['started_at']
-            self.logger.info(f"🔒 Closed session for {file_path} (duration: {session_duration.total_seconds():.1f}s, ended_at: {ended_at})")
-            
-            return session_data
-        else:
-            self.logger.debug(f"❌ No active session found for: {file_path} (user: {username})")
-            return None
-    
-    def close_all_sessions_for_file(self, file_path: str) -> List[Dict]:
-        """Принудительно закрывает все сессии для указанного файла"""
-        closed_sessions = []
+            success = event_handler.api_client.send_event(event_data)
+            if not success:
+                event_handler.logger.error(f"Failed to send closed event for expired session: {file_path}")
         
-        sessions_to_close = []
-        for session_key, session_data in list(self.active_sessions.items()):
-            if session_data['file_path'] == file_path:
-                sessions_to_close.append((session_data['file_path'], session_data['username']))
-        
-        self.logger.info(f"🔍 Found {len(sessions_to_close)} sessions to close for: {file_path}")
-        
-        for file_path, username in sessions_to_close:
-            session_data = self.close_session(file_path, username)
-            if session_data:
-                closed_sessions.append(session_data)
-        
-        return closed_sessions
-    
-    def cleanup_expired_sessions(self, event_handler) -> list:
-        """Очищает просроченные сессии"""
-        return self.check_and_close_expired_sessions()
+        return expired_sessions
     
     def get_session_stats(self) -> Dict:
-        """Возвращает статистику по сессиям"""
-        total_resumes = sum(session.get('resume_count', 0) for session in self.active_sessions.values())
+        """Возвращает статистику сессий"""
+        active_sessions = len(self.active_sessions)
+        closed_sessions_count = sum(len(sessions) for sessions in self.closed_sessions.values())
+        
+        # Собираем информацию о многопользовательских сессиях
+        multi_user_sessions = 0
+        for session_data in self.active_sessions.values():
+            if session_data.get('is_multi_user') or len(session_data.get('co_editors', [])) > 0:
+                multi_user_sessions += 1
         
         return {
-            'active_sessions': len(self.active_sessions),
-            'session_keys': list(self.active_sessions.keys()),
-            'total_resumes': total_resumes,
-            'closed_sessions_count': sum(len(sessions) for sessions in self.closed_sessions.values())
+            'active_sessions': active_sessions,
+            'closed_sessions': closed_sessions_count,
+            'multi_user_sessions': multi_user_sessions,
+            'session_history_size': len(self.closed_sessions)
         }
-    
-    def get_session_history(self, file_path: str, username: str) -> List[Dict]:
-        """Возвращает историю сессий для файла и пользователя"""
-        session_key = self._get_session_key(file_path, username)
-        return self.closed_sessions.get(session_key, [])

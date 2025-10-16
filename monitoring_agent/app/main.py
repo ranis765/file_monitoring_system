@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import sys
 import os
+import time
 
 # Добавляем корень проекта в PYTHONPATH
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -9,7 +10,7 @@ sys.path.insert(0, project_root)
 
 from shared.config_loader import load_config, get_monitoring_config
 from shared.logger import setup_logger
-from monitoring_agent.app.file_watcher import FileWatcher
+from monitoring_agent.app.file_monitor import FileMonitor
 
 def main():
     """Главная функция запуска агента мониторинга"""
@@ -36,9 +37,9 @@ def main():
                 os.makedirs(path, exist_ok=True)
                 logger.info(f"Created watch path: {path}")
         
-        # Создаем и запускаем наблюдатель, передавая конфигурацию
-        watcher = FileWatcher(monitoring_config=monitoring_config)
-        watcher.start()
+        # Создаем и запускаем монитор
+        monitor = FileMonitor(monitoring_config=monitoring_config)
+        monitor.start()
         
     except KeyboardInterrupt:
         logger.info("Monitoring stopped by user")

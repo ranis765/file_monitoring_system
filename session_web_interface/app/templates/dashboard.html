@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Session Manager{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>
+                <i class="fas fa-tachometer-alt me-2"></i>Dashboard
+            </h1>
+            <span class="badge bg-primary fs-6">Welcome, {{ username }}</span>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Quick Stats -->
+    <div class="col-md-3 mb-4">
+        <div class="card text-white bg-primary">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 class="card-title">{{ sessions|length }}</h4>
+                        <p class="card-text">Total Sessions</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-history fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 mb-4">
+        <div class="card text-white bg-success">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 class="card-title">
+                            {{ sessions|selectattr("ended_at", "none")|list|length }}
+                        </h4>
+                        <p class="card-text">Active Sessions</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-play-circle fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 mb-4">
+        <div class="card text-white bg-warning">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 class="card-title">
+                            {{ sessions|selectattr("is_commented")|list|length }}
+                        </h4>
+                        <p class="card-text">Commented Sessions</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-comment fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3 mb-4">
+        <div class="card text-white bg-info">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 class="card-title">
+                            {{ sessions|map(attribute="resume_count")|sum }}
+                        </h4>
+                        <p class="card-text">Total Resumes</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-redo fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-rocket me-2"></i>Quick Actions
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <a href="/sessions" class="btn btn-outline-primary w-100 py-3">
+                            <i class="fas fa-edit fa-2x mb-2"></i><br>
+                            Manage Sessions & Comments
+                        </a>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <a href="/history" class="btn btn-outline-success w-100 py-3">
+                            <i class="fas fa-history fa-2x mb-2"></i><br>
+                            View History
+                        </a>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <button class="btn btn-outline-info w-100 py-3" onclick="refreshData()">
+                            <i class="fas fa-sync-alt fa-2x mb-2"></i><br>
+                            Refresh Data
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-list me-2"></i>Recent Sessions
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if sessions %}
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>File</th>
+                                <th>Started</th>
+                                <th>Last Activity</th>
+                                <th>Status</th>
+                                <th>Comments</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for session in sessions[:5] %}
+                            <tr>
+                                <td>
+                                    <i class="fas fa-file me-1"></i>
+                                    {{ session.file_name or 'Unknown' }}
+                                </td>
+                                <td>{{ session.started_at[:19] if session.started_at else 'N/A' }}</td>
+                                <td>{{ session.last_activity[:19] if session.last_activity else 'N/A' }}</td>
+                                <td>
+                                    {% if session.ended_at %}
+                                    <span class="badge bg-secondary">Closed</span>
+                                    {% else %}
+                                    <span class="badge bg-success">Active</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if session.is_commented %}
+                                    <i class="fas fa-check text-success"></i>
+                                    {% else %}
+                                    <i class="fas fa-times text-muted"></i>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-4">
+                    <i class="fas fa-folder-open fa-3x text-muted mb-3"></i>
+                    <p class="text-muted">No sessions found</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function refreshData() {
+    location.reload();
+}
+</script>
+{% endblock %}
