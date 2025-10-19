@@ -1,15 +1,101 @@
+
 {% extends "base.html" %}
 
-{% block title %}Dashboard - Session Manager{% endblock %}
+{% block title %}Панель управления - Менеджер сессий{% endblock %}
 
 {% block content %}
 <div class="row">
     <div class="col-12">
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h1>
-                <i class="fas fa-tachometer-alt me-2"></i>Dashboard
+                <i class="fas fa-tachometer-alt me-2"></i>Панель управления
             </h1>
-            <span class="badge bg-primary fs-6">Welcome, {{ username }}</span>
+            <span class="badge bg-primary fs-6">Добро пожаловать, {{ username }}</span>
+        </div>
+    </div>
+</div>
+
+<!-- Карточки активных и незакомментированных сессий -->
+<div class="row mb-5">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-warning text-white">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-exclamation-triangle me-2"></i>Активные и незакомментированные сессии
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if active_uncommented %}
+                <div class="row">
+                    {% for session in active_uncommented %}
+                    <div class="col-md-6 col-lg-4 mb-4">
+                        <div class="card session-card h-100 {% if not session.ended_at %}session-card-active{% else %}session-card-closed-uncommented{% endif %}">
+                            <div class="card-header">
+                                <h6 class="card-title mb-0 text-truncate">
+                                    <i class="fas fa-file-code me-1"></i>{{ session.file_name | default('Неизвестно', true) }}
+                                </h6>
+                            </div>
+                            <div class="card-body">
+                                <p class="card-text">
+                                    <small class="text-muted">
+                                        <i class="fas fa-folder me-1"></i>
+                                        {{ session.file_path | default('Неизвестно', true) }}
+                                    </small>
+                                </p>
+                                <p><strong>Начата:</strong> {{ session.started_at[:19] if session.started_at else 'N/A' }}</p>
+                                <p><strong>Последняя активность:</strong> {{ session.last_activity[:19] if session.last_activity else 'N/A' }}</p>
+                                <p><strong>Статус:</strong> 
+                                    {% if not session.ended_at %}
+                                        <span class="badge bg-success">Активна</span>
+                                    {% else %}
+                                        <span class="badge bg-warning">Закрыта, требует комментария</span>
+                                    {% endif %}
+                                </p>
+                                
+                                <!-- Форма комментария -->
+                                <form method="post" action="/comment" class="mt-3">
+                                    <input type="hidden" name="username" value="{{ username }}">
+                                    <input type="hidden" name="session_id" value="{{ session.id }}">
+                                    
+                                    <div class="mb-3">
+                                        <label class="form-label">Тип изменения:</label>
+                                        <select name="change_type" class="form-select" required>
+                                            <option value="">Выберите тип изменения...</option>
+                                            <option value="корректировка_трассы">Корректировка трассы</option>
+                                            <option value="изменения_в_продольном_профиле">Изменения в продольном профиле</option>
+                                            <option value="обновление_поперечных_сечений">Обновление поперечных сечений</option>
+                                            <option value="добавление_дорожных_сооружений">Добавление дорожных сооружений</option>
+                                            <option value="корректировка_расчетов">Корректировка расчетов</option>
+                                            <option value="изменения_в_чертежах">Изменения в чертежах</option>
+                                            <option value="обновление_спецификаций">Обновление спецификаций</option>
+                                            <option value="экологические_корректировки">Экологические корректировки</option>
+                                            <option value="сметные_изменения">Сметные изменения</option>
+                                            <option value="другое">Другое</option>
+                                        </select>
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <label class="form-label">Комментарий:</label>
+                                        <textarea name="content" class="form-control" rows="3" 
+                                                  placeholder="Опишите изменения..." required></textarea>
+                                    </div>
+                                    
+                                    <button type="submit" class="btn btn-primary w-100">
+                                        <i class="fas fa-comment me-1"></i>Добавить комментарий
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="text-center py-4">
+                    <i class="fas fa-check-circle fa-3x text-success mb-3"></i>
+                    <p class="text-muted">Нет сессий для комментирования</p>
+                </div>
+                {% endif %}
+            </div>
         </div>
     </div>
 </div>
@@ -22,7 +108,7 @@
                 <div class="d-flex justify-content-between">
                     <div>
                         <h4 class="card-title">{{ sessions|length }}</h4>
-                        <p class="card-text">Total Sessions</p>
+                        <p class="card-text">Всего сессий</p>
                     </div>
                     <div class="align-self-center">
                         <i class="fas fa-history fa-2x"></i>
@@ -40,7 +126,7 @@
                         <h4 class="card-title">
                             {{ sessions|selectattr("ended_at", "none")|list|length }}
                         </h4>
-                        <p class="card-text">Active Sessions</p>
+                        <p class="card-text">Активные сессии</p>
                     </div>
                     <div class="align-self-center">
                         <i class="fas fa-play-circle fa-2x"></i>
@@ -58,7 +144,7 @@
                         <h4 class="card-title">
                             {{ sessions|selectattr("is_commented")|list|length }}
                         </h4>
-                        <p class="card-text">Commented Sessions</p>
+                        <p class="card-text">Закомментированные сессии</p>
                     </div>
                     <div class="align-self-center">
                         <i class="fas fa-comment fa-2x"></i>
@@ -76,7 +162,7 @@
                         <h4 class="card-title">
                             {{ sessions|map(attribute="resume_count")|sum }}
                         </h4>
-                        <p class="card-text">Total Resumes</p>
+                        <p class="card-text">Всего возобновлений</p>
                     </div>
                     <div class="align-self-center">
                         <i class="fas fa-redo fa-2x"></i>
@@ -92,7 +178,7 @@
         <div class="card">
             <div class="card-header">
                 <h5 class="card-title mb-0">
-                    <i class="fas fa-rocket me-2"></i>Quick Actions
+                    <i class="fas fa-rocket me-2"></i>Быстрые действия
                 </h5>
             </div>
             <div class="card-body">
@@ -100,19 +186,19 @@
                     <div class="col-md-4 mb-3">
                         <a href="/sessions" class="btn btn-outline-primary w-100 py-3">
                             <i class="fas fa-edit fa-2x mb-2"></i><br>
-                            Manage Sessions & Comments
+                            Управление сессиями и комментариями
                         </a>
                     </div>
                     <div class="col-md-4 mb-3">
                         <a href="/history" class="btn btn-outline-success w-100 py-3">
                             <i class="fas fa-history fa-2x mb-2"></i><br>
-                            View History
+                            Просмотр истории
                         </a>
                     </div>
                     <div class="col-md-4 mb-3">
                         <button class="btn btn-outline-info w-100 py-3" onclick="refreshData()">
                             <i class="fas fa-sync-alt fa-2x mb-2"></i><br>
-                            Refresh Data
+                            Обновить данные
                         </button>
                     </div>
                 </div>
@@ -126,7 +212,7 @@
         <div class="card">
             <div class="card-header">
                 <h5 class="card-title mb-0">
-                    <i class="fas fa-list me-2"></i>Recent Sessions
+                    <i class="fas fa-list me-2"></i>Недавние сессии
                 </h5>
             </div>
             <div class="card-body">
@@ -135,11 +221,11 @@
                     <table class="table table-striped">
                         <thead>
                             <tr>
-                                <th>File</th>
-                                <th>Started</th>
-                                <th>Last Activity</th>
-                                <th>Status</th>
-                                <th>Comments</th>
+                                <th>Файл</th>
+                                <th>Начата</th>
+                                <th>Последняя активность</th>
+                                <th>Статус</th>
+                                <th>Комментарии</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -147,15 +233,15 @@
                             <tr>
                                 <td>
                                     <i class="fas fa-file me-1"></i>
-                                    {{ session.file_name or 'Unknown' }}
+                                    {{ session.file_name | default('Неизвестно', true) }}
                                 </td>
                                 <td>{{ session.started_at[:19] if session.started_at else 'N/A' }}</td>
                                 <td>{{ session.last_activity[:19] if session.last_activity else 'N/A' }}</td>
                                 <td>
                                     {% if session.ended_at %}
-                                    <span class="badge bg-secondary">Closed</span>
+                                    <span class="badge bg-secondary">Закрыта</span>
                                     {% else %}
-                                    <span class="badge bg-success">Active</span>
+                                    <span class="badge bg-success">Активна</span>
                                     {% endif %}
                                 </td>
                                 <td>
@@ -173,7 +259,7 @@
                 {% else %}
                 <div class="text-center py-4">
                     <i class="fas fa-folder-open fa-3x text-muted mb-3"></i>
-                    <p class="text-muted">No sessions found</p>
+                    <p class="text-muted">Сессии не найдены</p>
                 </div>
                 {% endif %}
             </div>

@@ -8,6 +8,12 @@ class FileValidator:
     def __init__(self, config: dict):
         self.config = config
         self.logger = setup_logger(__name__)
+
+        # ОГРАНИЧЕНИЕ РАЗМЕРА КЭША
+        self._category_cache = {}
+        self._max_cache_size = 1000  # Максимальный размер кэша
+        self._cache_hits = 0
+        self._cache_misses = 0
         
         # УНИВЕРСАЛЬНАЯ КЛАССИФИКАЦИЯ ФАЙЛОВ - РАСШИРЕННАЯ ВЕРСИЯ
         self.FILE_CATEGORIES = {
@@ -96,9 +102,17 @@ class FileValidator:
         """Определяет категорию файла"""
         filename = os.path.basename(file_path)
         
-        # Проверяем кэш
+        # ОЧИСТКА КЭША ПРИ ПРЕВЫШЕНИИ ЛИМИТА
+        if len(self._category_cache) > self._max_cache_size:
+            self._category_cache.clear()
+            self.logger.debug("🧹 Cleared category cache (size limit exceeded)")
+        
         if file_path in self._category_cache:
+            self._cache_hits += 1
             return self._category_cache[file_path]
+    
+        self._cache_misses += 1
+        
         
         # 1. Проверяем полностью игнорируемые файлы
         if self._is_ignored_file(filename):

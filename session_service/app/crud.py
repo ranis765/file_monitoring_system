@@ -1,4 +1,3 @@
-# crud.py (сервер)
 from sqlalchemy.orm import Session
 from . import models, schemas
 import uuid
@@ -12,7 +11,7 @@ def get_user_by_username(db: Session, username: str):
     return db.query(models.User).filter(models.User.username == username).first()
 
 def create_user(db: Session, user: schemas.UserCreate):
-    db_user = models.User(**user.dict())
+    db_user = models.User(**user.model_dump())
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
@@ -31,7 +30,7 @@ def create_file(db: Session, file: schemas.FileCreate):
     if db_file:
         return db_file
     
-    db_file = models.File(**file.dict())
+    db_file = models.File(**file.model_dump())
     db.add(db_file)
     db.commit()
     db.refresh(db_file)
@@ -39,7 +38,7 @@ def create_file(db: Session, file: schemas.FileCreate):
 
 # File Session CRUD
 def create_file_session(db: Session, session: schemas.FileSessionCreate):
-    db_session = models.FileSession(**session.dict())
+    db_session = models.FileSession(**session.model_dump())
     db.add(db_session)
     db.commit()
     db.refresh(db_session)
@@ -56,17 +55,78 @@ def update_file_session_activity(db: Session, session_id: uuid.UUID):
         db.refresh(db_session)
     return db_session
 
+def get_active_session_by_user_and_file(db: Session, user_id: uuid.UUID, file_id: uuid.UUID):
+    """Получает активную сессию для пользователя и файла (только незакрытые)"""
+    return db.query(models.FileSession).filter(
+        models.FileSession.user_id == user_id,
+        models.FileSession.file_id == file_id,
+        models.FileSession.ended_at.is_(None)
+    ).first()
+
+def get_any_active_session_for_file(db: Session, file_id: uuid.UUID):
+    """Получает любую активную сессию для файла (любого пользователя)"""
+    return db.query(models.FileSession).filter(
+        models.FileSession.file_id == file_id,
+        models.FileSession.ended_at.is_(None)
+    ).first()
+
+def close_all_active_sessions_for_file(db: Session, file_id: uuid.UUID, ended_at: datetime = None):
+    """Закрывает все активные сессии для файла"""
+    active_sessions = db.query(models.FileSession).filter(
+        models.FileSession.file_id == file_id,
+        models.FileSession.ended_at.is_(None)
+    ).all()
+    
+    for session in active_sessions:
+        session.ended_at = ended_at or datetime.now()
+    
+    db.commit()
+    return len(active_sessions)
+
+def close_user_sessions_for_file(db: Session, user_id: uuid.UUID, file_id: uuid.UUID, ended_at: datetime = None):
+    """Закрывает все активные сессии пользователя для файла"""
+    active_sessions = db.query(models.FileSession).filter(
+        models.FileSession.user_id == user_id,
+        models.FileSession.file_id == file_id,
+        models.FileSession.ended_at.is_(None)
+    ).all()
+    
+    for session in active_sessions:
+        session.ended_at = ended_at or datetime.now()
+    
+    db.commit()
+    return len(active_sessions)
+
+def close_session(db: Session, session_id: uuid.UUID, ended_at: datetime = None):
+    """Закрывает сессию с указанным временем окончания"""
+    session = get_file_session(db, session_id)
+    if session:
+        session.ended_at = ended_at or datetime.now()
+        db.commit()
+        db.refresh(session)
+    return session
+
+def get_recent_closed_session(db: Session, user_id: uuid.UUID, file_id: uuid.UUID, hours: int = 1):
+    """Получает недавно закрытую сессию для возможного возобновления (только не прокомментированные)"""
+    cutoff_time = datetime.now() - timedelta(hours=hours)
+    return db.query(models.FileSession).filter(
+        models.FileSession.user_id == user_id,
+        models.FileSession.file_id == file_id,
+        models.FileSession.ended_at >= cutoff_time,
+        models.FileSession.is_commented == False  
+    ).order_by(models.FileSession.ended_at.desc()).first()
+
 # File Event CRUD
 def create_file_event(db: Session, event: schemas.FileEventCreate):
-    db_event = models.FileEvent(**event.dict())
+    db_event = models.FileEvent(**event.model_dump())
     db.add(db_event)
     db.commit()
     db.refresh(db_event)
     return db_event
 
-# Comment CRUD (ОБНОВЛЕН - добавлена работа с change_type)
+# Comment CRUD
 def create_comment(db: Session, comment: schemas.CommentCreate):
-    db_comment = models.Comment(**comment.dict())
+    db_comment = models.Comment(**comment.model_dump())
     db.add(db_comment)
     db.commit()
     db.refresh(db_comment)
@@ -100,32 +160,6 @@ def get_comment_with_user(db: Session, session_id: uuid.UUID):
     ).filter(
         models.Comment.session_id == session_id
     ).first()
-
-def get_active_sessions_by_user_and_file(db: Session, user_id: uuid.UUID, file_id: uuid.UUID):
-    """Получает активные сессии для пользователя и файла"""
-    return db.query(models.FileSession).filter(
-        models.FileSession.user_id == user_id,
-        models.FileSession.file_id == file_id,
-        models.FileSession.ended_at.is_(None)
-    ).order_by(models.FileSession.last_activity.desc()).all()
-
-def close_session(db: Session, session_id: uuid.UUID):
-    """Закрывает сессию"""
-    session = get_file_session(db, session_id)
-    if session:
-        session.ended_at = datetime.now()
-        db.commit()
-        db.refresh(session)
-    return session
-
-def get_recent_closed_session(db: Session, user_id: uuid.UUID, file_id: uuid.UUID, hours: int = 1):
-    """Получает недавно закрытую сессию для возможного возобновления"""
-    cutoff_time = datetime.now() - timedelta(hours=hours)
-    return db.query(models.FileSession).filter(
-        models.FileSession.user_id == user_id,
-        models.FileSession.file_id == file_id,
-        models.FileSession.ended_at >= cutoff_time
-    ).order_by(models.FileSession.ended_at.desc()).first()
 
 # Новые функции для работы с сессиями и комментариями
 def get_session_with_details(db: Session, session_id: uuid.UUID):
@@ -163,3 +197,61 @@ def get_sessions_with_comments(db: Session, skip: int = 0, limit: int = 100):
     ).filter(
         models.FileSession.is_commented == True
     ).offset(skip).limit(limit).all()
+
+def create_file_session_with_id(db: Session, session: schemas.FileSessionCreate):
+    """Создает сессию с возможностью указания ID"""
+    # Если в сессии указан ID, используем его
+    session_dict = session.model_dump()
+    
+    if 'id' in session_dict and session_dict['id'] is not None:
+        db_session = models.FileSession(**session_dict)
+    else:
+        # Иначе создаем сессию с автоматически сгенерированным ID
+        db_session = models.FileSession(**session_dict)
+    
+    db.add(db_session)
+    db.commit()
+    db.refresh(db_session)
+    return db_session
+
+def get_active_sessions_by_user_and_file(db: Session, user_id: uuid.UUID, file_id: uuid.UUID):
+    """Получает активную сессию для пользователя и файла (только незакрытые)"""
+    return db.query(models.FileSession).filter(
+        models.FileSession.user_id == user_id,
+        models.FileSession.file_id == file_id,
+        models.FileSession.ended_at.is_(None)
+    ).first()
+
+def get_any_active_session_for_file(db: Session, file_id: uuid.UUID):
+    """Получает любую активную сессию для файла (любого пользователя)"""
+    return db.query(models.FileSession).filter(
+        models.FileSession.file_id == file_id,
+        models.FileSession.ended_at.is_(None)
+    ).first()
+
+def close_all_active_sessions_for_file(db: Session, file_id: uuid.UUID, ended_at: datetime = None):
+    """Закрывает все активные сессии для файла"""
+    active_sessions = db.query(models.FileSession).filter(
+        models.FileSession.file_id == file_id,
+        models.FileSession.ended_at.is_(None)
+    ).all()
+    
+    for session in active_sessions:
+        session.ended_at = ended_at or datetime.now()
+    
+    db.commit()
+    return len(active_sessions)
+
+def close_user_sessions_for_file(db: Session, user_id: uuid.UUID, file_id: uuid.UUID, ended_at: datetime = None):
+    """Закрывает все активные сессии пользователя для файла"""
+    active_sessions = db.query(models.FileSession).filter(
+        models.FileSession.user_id == user_id,
+        models.FileSession.file_id == file_id,
+        models.FileSession.ended_at.is_(None)
+    ).all()
+    
+    for session in active_sessions:
+        session.ended_at = ended_at or datetime.now()
+    
+    db.commit()
+    return len(active_sessions)

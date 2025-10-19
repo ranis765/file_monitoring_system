@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI, Request, Form, Depends, HTTPException, Response
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -13,7 +14,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.api.client import APIClient
 
-app = FastAPI(title="Session Web Interface", version="1.0.0")
+app = FastAPI(title="Веб-интерфейс сессий", version="1.0.0")
 
 # Mount static files and templates
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
@@ -22,54 +23,68 @@ templates = Jinja2Templates(directory="app/templates")
 # API client
 api_client = APIClient(base_url="http://localhost:8000")
 
-# Полностью отключаем авторизацию - теперь без фиксированного пользователя
+# Полностью отключаем авторизацию
 DISABLE_AUTH = True
 
 # Простое хранилище сессий (в памяти, для демо)
 user_sessions = {}
 
 def get_username(request: Request):
-    """Get username from session"""
+    """Получить имя пользователя из сессии"""
     if DISABLE_AUTH:
-        # Получаем session_id из cookies
         session_id = request.cookies.get("session_id")
         if session_id and session_id in user_sessions:
             return user_sessions[session_id]
         return None
     return None
 
+def extract_filename(file_path: str) -> str:
+    """Извлечь имя файла из пути"""
+    if not file_path or file_path.strip() == "":
+        return "Неизвестно"
+    file_path = file_path.replace('\\', '/')
+    return os.path.basename(file_path) or "Неизвестно"
+
+async def get_file_info(file_id: str) -> dict:
+    """Получить информацию о файле по file_id"""
+    if not file_id or file_id.strip() == "":
+        print(f"Ошибка: file_id пустой или отсутствует")
+        return {"file_path": "Неизвестно", "file_name": "Неизвестно"}
+    
+    try:
+        print(f"Отправка запроса для file_id: {file_id}")  # Отладка
+        file_data = await api_client.get_file(file_id)
+        print(f"Получены данные для file_id {file_id}: {file_data}")  # Отладка
+        return file_data
+    except Exception as e:
+        print(f"Ошибка при получении данных файла {file_id}: {str(e)}")  # Отладка
+        return {"file_path": "Неизвестно", "file_name": "Неизвестно"}
+
 @app.get("/", response_class=HTMLResponse)
 async def login_page(request: Request):
+    """Страница входа"""
     if DISABLE_AUTH:
-        # Проверяем, есть ли уже пользователь в сессии
         username = get_username(request)
         if username:
-            # Если пользователь уже выбран, перенаправляем на дашборд
             return RedirectResponse(url="/dashboard", status_code=303)
-        # Иначе показываем страницу выбора пользователя
         return templates.TemplateResponse("user_select.html", {"request": request})
     return templates.TemplateResponse("login.html", {"request": request})
 
 @app.post("/login")
 async def login(response: Response, username: str = Form(...)):
-    """Handle user login"""
+    """Обработка входа пользователя"""
     if DISABLE_AUTH:
-        # Создаем уникальный session_id
         session_id = str(uuid.uuid4())
-        # Сохраняем пользователя в сессии
         user_sessions[session_id] = username
-        
-        # Сохраняем session_id в cookies
         response = RedirectResponse(url="/dashboard", status_code=303)
         response.set_cookie(
             key="session_id", 
             value=session_id, 
             httponly=True,
-            max_age=3600  # 1 час
+            max_age=3600
         )
         return response
     
-    # Для нормального режима (если включим авторизацию)
     session_id = str(uuid.uuid4())
     user_sessions[session_id] = username
     response = RedirectResponse(url="/dashboard", status_code=303)
@@ -83,26 +98,22 @@ async def login(response: Response, username: str = Form(...)):
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request):
-    """Main dashboard page"""
+    """Главная панель"""
     username = get_username(request)
     
-    # Если авторизация отключена и нет пользователя, показываем выбор пользователя
     if DISABLE_AUTH and not username:
         return RedirectResponse(url="/", status_code=303)
     
-    # Если все еще нет username и авторизация включена - редирект на логин
     if not username and not DISABLE_AUTH:
         return RedirectResponse(url="/")
     
     try:
-        # Get user activity for stats
+        print(f"Загрузка дашборда для пользователя: {username}")  # Отладка
         user_activity = await api_client.get_user_activity(username)
-        
-        # Get all sessions and filter by user
         all_sessions = await api_client.get_sessions()
-        user_sessions_list = []
+        print(f"API sessions data: {all_sessions}")  # Отладка
         
-        # Get user ID first
+        user_sessions_list = []
         users_data = await api_client.get_users()
         user_obj = next((u for u in users_data.get("users", []) if u["username"] == username), None)
         
@@ -112,58 +123,113 @@ async def dashboard(request: Request):
                 if session.get("user_id") == user_obj["id"]
             ]
         else:
-            # Если пользователь не найден в API, показываем все сессии
             user_sessions_list = all_sessions.get("sessions", [])
         
+        print(f"Найдено сессий пользователя: {len(user_sessions_list)}")  # Отладка
+        
+        # Обогащаем сессии полями file_name и file_path
+        active_uncommented = []
+        for s in user_sessions_list:
+            file_id = s.get("file_id", "")
+            print(f"Обработка сессии {s.get('id')} с file_id: {file_id}")  # Отладка
+            if not s.get("ended_at") or not s.get("is_commented"):
+                file_info = await get_file_info(file_id)
+                file_path = file_info.get("file_path", "Неизвестно")
+                file_name = file_info.get("file_name", extract_filename(file_path))
+                active_uncommented.append({
+                    **s,
+                    "file_name": file_name,
+                    "file_path": file_path
+                })
+        
+        user_sessions_list = [
+            {
+                **s,
+                "file_name": (await get_file_info(s.get("file_id", ""))).get("file_name", extract_filename((await get_file_info(s.get("file_id", ""))).get("file_path", "Неизвестно"))),
+                "file_path": (await get_file_info(s.get("file_id", ""))).get("file_path", "Неизвестно")
+            }
+            for s in user_sessions_list
+        ]
+        print(f"Processed active_uncommented: {active_uncommented}")  # Отладка
+
         return templates.TemplateResponse("dashboard.html", {
             "request": request,
             "username": username,
             "sessions": user_sessions_list,
+            "active_uncommented": active_uncommented,
             "user_activity": user_activity
         })
     except Exception as e:
-        print(f"Error in dashboard: {e}")  # Для отладки
+        print(f"Ошибка в панели: {str(e)}")
         return templates.TemplateResponse("dashboard.html", {
             "request": request,
             "username": username,
             "sessions": [],
-            "error": f"Error loading sessions: {str(e)}"
+            "active_uncommented": [],
+            "error": f"Ошибка загрузки сессий: {str(e)}"
         })
 
 @app.get("/sessions", response_class=HTMLResponse)
 async def sessions_page(request: Request):
-    """Sessions page with commenting functionality"""
+    """Страница сессий с функцией комментирования"""
     username = get_username(request)
     
-    # Если авторизация отключена и нет пользователя, показываем выбор пользователя
     if DISABLE_AUTH and not username:
         return RedirectResponse(url="/", status_code=303)
     
-    # Если все еще нет username и авторизация включена - редирект на логин
     if not username and not DISABLE_AUTH:
         return RedirectResponse(url="/")
     
     try:
-        # Get active sessions and user info
         user_activity = await api_client.get_user_activity(username)
         change_types = await api_client.get_change_types()
         
+        user_activity["active_files"] = [
+            {
+                **f,
+                "file_name": (await get_file_info(f.get("file_id", ""))).get("file_name", extract_filename((await get_file_info(f.get("file_id", ""))).get("file_path", "Неизвестно"))),
+                "file_path": (await get_file_info(f.get("file_id", ""))).get("file_path", "Неизвестно")
+            }
+            for f in user_activity.get("active_files", [])
+        ]
+        user_activity["recent_files"] = [
+            {
+                **f,
+                "file_name": (await get_file_info(f.get("file_id", ""))).get("file_name", extract_filename((await get_file_info(f.get("file_id", ""))).get("file_path", "Неизвестно"))),
+                "file_path": (await get_file_info(f.get("file_id", ""))).get("file_path", "Неизвестно")
+            }
+            for f in user_activity.get("recent_files", [])
+        ]
+        
+        all_sessions = await api_client.get_sessions()
+        user_sessions_list = [
+            {
+                **s,
+                "file_name": (await get_file_info(s.get("file_id", ""))).get("file_name", extract_filename((await get_file_info(s.get("file_id", ""))).get("file_path", "Неизвестно"))),
+                "file_path": (await get_file_info(s.get("file_id", ""))).get("file_path", "Неизвестно")
+            }
+            for s in all_sessions.get("sessions", []) if s.get("username") == username
+        ]
+        sorted_sessions = sorted(user_sessions_list, key=lambda x: x.get("started_at", ""), reverse=True)
+
         return templates.TemplateResponse("sessions.html", {
             "request": request,
             "username": username,
             "active_files": user_activity.get("active_files", []),
             "recent_files": user_activity.get("recent_files", []),
-            "change_types": change_types.get("change_types", [])
+            "change_types": change_types.get("change_types", []),
+            "sessions": sorted_sessions
         })
     except Exception as e:
-        print(f"Error in sessions: {e}")  # Для отладки
+        print(f"Ошибка в сессиях: {str(e)}")
         return templates.TemplateResponse("sessions.html", {
             "request": request,
             "username": username,
             "active_files": [],
             "recent_files": [],
             "change_types": [],
-            "error": f"Error loading data: {str(e)}"
+            "sessions": [],
+            "error": f"Ошибка загрузки данных: {str(e)}"
         })
 
 @app.post("/comment")
@@ -174,19 +240,15 @@ async def add_comment(
     change_type: str = Form(...),
     username: str = Form(...)
 ):
-    """Submit a comment for a session"""
+    """Добавить комментарий к сессии"""
     try:
-        # Get user ID
         users_data = await api_client.get_users()
         user = next((u for u in users_data.get("users", []) if u["username"] == username), None)
         
         if not user:
-            # Если пользователь не найден, создаем его (для демо)
             user_data = {"username": username, "email": f"{username}@example.com"}
-            # Здесь можно добавить вызов API для создания пользователя если нужно
-            user = {"id": str(uuid.uuid4()), "username": username}  # Временный ID для демо
+            user = {"id": str(uuid.uuid4()), "username": username}
         
-        # Create comment
         comment_data = {
             "session_id": session_id,
             "user_id": user["id"],
@@ -196,32 +258,33 @@ async def add_comment(
         
         await api_client.create_comment(comment_data)
         
-        return RedirectResponse(url="/sessions?message=Comment+added+successfully", status_code=303)
+        return RedirectResponse(url="/sessions?message=Комментарий+добавлен+успешно", status_code=303)
     
     except Exception as e:
-        print(f"Error adding comment: {e}")  # Для отладки
+        print(f"Ошибка добавления комментария: {str(e)}")
         return RedirectResponse(url=f"/sessions?error={str(e)}", status_code=303)
 
 @app.get("/history", response_class=HTMLResponse)
 async def history_page(request: Request):
-    """User history page"""
+    """Страница истории пользователя"""
     username = get_username(request)
     
-    # Если авторизация отключена и нет пользователя, показываем выбор пользователя
     if DISABLE_AUTH and not username:
         return RedirectResponse(url="/", status_code=303)
     
-    # Если все еще нет username и авторизация включена - редирект на логин
     if not username and not DISABLE_AUTH:
         return RedirectResponse(url="/")
     
     try:
-        # Get sessions with comments
         sessions_with_comments = await api_client.get_sessions_with_comments()
         
-        # Filter user's sessions
         user_sessions_with_comments = [
-            session for session in sessions_with_comments 
+            {
+                **session,
+                "file_name": (await get_file_info(session.get("file_id", ""))).get("file_name", extract_filename((await get_file_info(session.get("file_id", ""))).get("file_path", "Неизвестно"))),
+                "file_path": (await get_file_info(session.get("file_id", ""))).get("file_path", "Неизвестно")
+            }
+            for session in sessions_with_comments 
             if session.get("username") == username
         ]
         
@@ -231,28 +294,96 @@ async def history_page(request: Request):
             "sessions": user_sessions_with_comments
         })
     except Exception as e:
-        print(f"Error in history: {e}")  # Для отладки
+        print(f"Ошибка в истории: {str(e)}")
         return templates.TemplateResponse("history.html", {
             "request": request,
             "username": username,
             "sessions": [],
-            "error": f"Error loading history: {str(e)}"
+            "error": f"Ошибка загрузки истории: {str(e)}"
+        })
+
+@app.get("/all-history", response_class=HTMLResponse)
+async def all_history_page(request: Request, sort_by: str = "date", project: str = None, change_type: str = None):
+    """Страница общей истории"""
+    username = get_username(request)
+    
+    if DISABLE_AUTH and not username:
+        return RedirectResponse(url="/", status_code=303)
+    
+    if not username and not DISABLE_AUTH:
+        return RedirectResponse(url="/")
+    
+    try:
+        all_sessions_with_comments = await api_client.get_sessions_with_comments()
+        
+        all_sessions_with_comments = [
+            {
+                **s,
+                "file_name": (await get_file_info(s.get("file_id", ""))).get("file_name", extract_filename((await get_file_info(s.get("file_id", ""))).get("file_path", "Неизвестно"))),
+                "file_path": (await get_file_info(s.get("file_id", ""))).get("file_path", "Неизвестно")
+            }
+            for s in all_sessions_with_comments
+        ]
+        
+        if sort_by == "user":
+            all_sessions_with_comments.sort(key=lambda x: x.get("username", ""))
+        elif sort_by == "date":
+            all_sessions_with_comments.sort(key=lambda x: x.get("started_at", ""), reverse=True)
+        elif sort_by == "project":
+            all_sessions_with_comments.sort(key=lambda x: x.get("file_path", ""))
+        elif sort_by == "change_type":
+            all_sessions_with_comments.sort(key=lambda x: x.get("comment", {}).get("change_type", ""))
+        
+        if project:
+            all_sessions_with_comments = [s for s in all_sessions_with_comments if project in s.get("file_path", "")]
+        if change_type:
+            all_sessions_with_comments = [s for s in all_sessions_with_comments if s.get("comment", {}).get("change_type") == change_type]
+
+        return templates.TemplateResponse("all_history.html", {
+            "request": request,
+            "username": username,
+            "sessions": all_sessions_with_comments,
+            "sort_by": sort_by,
+            "project": project,
+            "change_type": change_type
+        })
+    except Exception as e:
+        print(f"Ошибка в общей истории: {str(e)}")
+        return templates.TemplateResponse("all_history.html", {
+            "request": request,
+            "username": username,
+            "sessions": [],
+            "error": f"Ошибка загрузки истории: {str(e)}"
         })
 
 @app.get("/api/user-sessions/{username}")
 async def get_user_sessions_api(username: str):
-    """API endpoint to get user sessions"""
+    """API endpoint для сессий пользователя"""
     try:
         user_activity = await api_client.get_user_activity(username)
+        user_activity["active_files"] = [
+            {
+                **f,
+                "file_name": (await get_file_info(f.get("file_id", ""))).get("file_name", extract_filename((await get_file_info(f.get("file_id", ""))).get("file_path", "Неизвестно"))),
+                "file_path": (await get_file_info(f.get("file_id", ""))).get("file_path", "Неизвестно")
+            }
+            for f in user_activity.get("active_files", [])
+        ]
+        user_activity["recent_files"] = [
+            {
+                **f,
+                "file_name": (await get_file_info(f.get("file_id", ""))).get("file_name", extract_filename((await get_file_info(f.get("file_id", ""))).get("file_path", "Неизвестно"))),
+                "file_path": (await get_file_info(f.get("file_id", ""))).get("file_path", "Неизвестно")
+            }
+            for f in user_activity.get("recent_files", [])
+        ]
         return user_activity
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# Новый эндпоинт для смены пользователя
 @app.get("/change-user")
 async def change_user(response: Response, request: Request):
-    """Change current user"""
-    # Удаляем сессию
+    """Смена текущего пользователя"""
     session_id = request.cookies.get("session_id")
     if session_id and session_id in user_sessions:
         del user_sessions[session_id]
@@ -261,14 +392,14 @@ async def change_user(response: Response, request: Request):
     response.delete_cookie(key="session_id")
     return response
 
-# Простой эндпоинт для проверки работы
 @app.get("/health")
 async def health_check():
+    """Проверка состояния сервера"""
     return {"status": "ok", "auth_disabled": DISABLE_AUTH}
 
-# Эндпоинт для отладки
 @app.get("/debug")
 async def debug_cookies(request: Request):
+    """Отладка cookies и сессий"""
     username = get_username(request)
     session_id = request.cookies.get("session_id")
     return {
@@ -279,11 +410,10 @@ async def debug_cookies(request: Request):
         "auth_disabled": DISABLE_AUTH
     }
 
-# Очистка старых сессий при запуске
 @app.on_event("startup")
 async def startup_event():
+    """Очистка сессий при старте"""
     user_sessions.clear()
 
 if __name__ == "__main__":
-    # Запускаем без reload, чтобы избежать warning
     uvicorn.run(app, host="0.0.0.0", port=8001)

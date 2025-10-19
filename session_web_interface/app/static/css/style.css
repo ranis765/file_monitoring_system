@@ -1,3 +1,4 @@
+
 .session-card {
     transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
 }
@@ -47,16 +48,47 @@
     border-radius: 10px 10px 0 0 !important;
 }
 
+/* Стили для активных и закрытых незакомментированных сессий */
+.session-card-active {
+    border: 2px solid #28a745 !important; /* Зеленая граница для активных */
+    background-color: #e6f4ea;
+}
+
+.session-card-closed-uncommented {
+    border: 2px solid #fd7e14 !important; /* Оранжевая граница для закрытых незакомментированных */
+    background-color: #fff3cd;
+}
+
 /* Custom colors for change type badges */
-.change-type-technical_changes { background-color: #dc3545; }
-.change-type-design_changes { background-color: #6f42c1; }
-.change-type-content_changes { background-color: #fd7e14; }
-.change-type-bug_fixes { background-color: #20c997; }
-.change-type-optimization { background-color: #0dcaf0; }
-.change-type-refactoring { background-color: #ffc107; color: #000; }
-.change-type-new_feature { background-color: #198754; }
-.change-type-documentation { background-color: #6c757d; }
-.change-type-other { background-color: #adb5bd; }
+.change-type-корректировка_трассы { background-color: #dc3545; }
+.change-type-изменения_в_продольном_профиле { background-color: #6f42c1; }
+.change-type-обновление_поперечных_сечений { background-color: #fd7e14; }
+.change-type-добавление_дорожных_сооружений { background-color: #20c997; }
+.change-type-корректировка_расчетов { background-color: #0dcaf0; }
+.change-type-изменения_в_чертежах { background-color: #ffc107; color: #000; }
+.change-type-обновление_спецификаций { background-color: #198754; }
+.change-type-экологические_корректировки { background-color: #6c757d; }
+.change-type-сметные_изменения { background-color: #adb5bd; }
+.change-type-другое { background-color: #0d6efd; }
+
+/* Стили для группировки по дням */
+.day-group {
+    margin-bottom: 2rem;
+    border-bottom: 1px solid #dee2e6;
+    padding-bottom: 1rem;
+}
+
+.day-header {
+    background-color: #f8f9fa;
+    padding: 0.5rem 1rem;
+    border-radius: 5px;
+    margin-bottom: 1rem;
+}
+
+/* Стили для сортировок */
+.sort-select {
+    max-width: 200px;
+}
 
 /* Responsive adjustments */
 @media (max-width: 768px) {

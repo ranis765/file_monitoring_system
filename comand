@@ -9,3 +9,7 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 docker-compose down
 
 docker volume rm file_monitoring_system_postgres_data
+
+
+netstat -ano | findstr :8000
+taskkill /PID 17608 /f

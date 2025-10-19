@@ -2,11 +2,12 @@ import os
 import getpass
 import platform
 import time
+import requests
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List
 from shared.logger import setup_logger
 from shared.config_loader import get_monitoring_config, get_api_client_config
-
+from .agent_server import AgentServer
 
 try:
     import win32security
@@ -47,6 +48,16 @@ class EventHandler:
         self.api_client = APIClient()
         self.file_validator = FileValidator(self.config)
         
+        # Инициализация сервера агента
+        agent_port = self.config.get('agent_server', {}).get('port', 8080)
+        self.agent_server = AgentServer(self, port=agent_port)
+        self.agent_server.start()
+
+        # Словарь для отслеживания прокомментированных файлов
+        self.commented_files = {}
+
+        self.other_agents = self.config.get('agents', [])
+
         # Настройки аудита
         self.use_auditing = self.config.get('use_auditing', False)
         self.audit_query_interval = self.config.get('audit_log_query_interval', 10)
@@ -100,6 +111,8 @@ class EventHandler:
         
         self.logger.info(f"EventHandler initialized with auditing={self.use_auditing}")
 
+    
+    
     def handle_file_event(self, event_type: str, file_path: str, dest_path: str = None) -> bool:
         """Обрабатывает событие файла с поддержкой аудита"""
         try:
@@ -185,20 +198,31 @@ class EventHandler:
             return False
 
     def _get_file_modifier_safe(self, file_path: str, event_type: str) -> str:
-        """Безопасное получение модификатора файла с поддержкой аудита Windows"""
+        """Безопасное получение модификатора файла с приоритетом по процессам"""
         try:
             if not os.path.exists(file_path) and event_type != 'deleted':
                 return getpass.getuser()
-            
-            # Пытаемся получить пользователя через аудит
+        
+            # ПЕРВЫЙ ПРИОРИТЕТ: Получаем пользователя из процессов, работающих с файлом
+            current_editors = self._get_current_editors(file_path)
+            if current_editors:
+                # Берем первого редактора (самого активного)
+                primary_editor = current_editors[0]
+                self.logger.debug(f"👤 Determined editor from processes: {primary_editor} for {file_path}")
+                return primary_editor
+        
+            # ВТОРОЙ ПРИОРИТЕТ: Пытаемся получить пользователя через аудит
             if self.use_auditing and win32evtlog:
                 audit_user = self._get_user_from_audit_log(file_path)
                 if audit_user:
                     self.stats['audit_events_used'] += 1
+                    self.logger.debug(f"👤 Determined editor from audit: {audit_user} for {file_path}")
                     return audit_user
-            
-            # Fallback: получаем владельца файла
-            return self._get_file_modifier(file_path)
+        
+            # ТРЕТИЙ ПРИОРИТЕТ: получаем владельца файла
+            file_owner = self._get_file_modifier(file_path)
+            self.logger.debug(f"👤 Determined editor from file owner: {file_owner} for {file_path}")
+            return file_owner
             
         except Exception as e:
             self.logger.warning(f"Failed to get file modifier for {file_path}, using current user: {e}")
@@ -276,127 +300,218 @@ class EventHandler:
             self.logger.error(f"Failed to get file owner for {file_path}: {e}")
             return getpass.getuser()
 
+    # def _get_current_editors(self, file_path: str) -> List[str]:
+    #     """Возвращает список пользователей, которые сейчас работают с файлом - УЛУЧШЕННАЯ ВЕРСИЯ"""
+    #     if not psutil:
+    #         return []
+        
+    #     editors = set()
+    #     try:
+    #         processes = self._get_processes_using_file(file_path)
+        
+    #         for process in processes:
+    #             username = process['username']
+            
+    #             # Нормализуем имя пользователя
+    #             normalized_username = self._normalize_username(username)
+            
+    #             # Исключаем системных пользователей
+    #             if normalized_username.lower() in ['system', 'network service', 'local service']:
+    #                 continue
+                
+    #             editors.add(normalized_username)
+        
+    #         # Если нашли редакторов через процессы - возвращаем их
+    #         if editors:
+    #             editors_list = list(editors)
+    #             self.logger.debug(f"🔍 Found editors via processes for {file_path}: {editors_list}")
+    #             return editors_list
+        
+    #         # Если процессов не нашли, проверяем кэш редакторов (с таймаутом)
+    #         if file_path in self.file_editors:
+    #             editor_info = self.file_editors[file_path]
+    #             current_time = datetime.now()
+    #             active_editors = []
+            
+    #             for editor, last_activity in editor_info['last_activity_by_user'].items():
+    #                 # Считаем редактора активным если активность была в последние 10 минут
+    #                 if (current_time - last_activity).total_seconds() < 600:
+    #                     active_editors.append(editor)
+            
+    #             if active_editors:
+    #                 self.logger.debug(f"🔍 Found editors via cache for {file_path}: {active_editors}")
+    #                 return active_editors
+                
+    #     except Exception as e:
+    #         self.logger.debug(f"Error getting current editors for {file_path}: {e}")
+        
+    #     return []
+
+    
     def _get_current_editors(self, file_path: str) -> List[str]:
-        """Возвращает список пользователей, которые сейчас работают с файлом"""
+        """Возвращает список пользователей, которые сейчас работают с файлом - ИСПРАВЛЕННАЯ ВЕРСИЯ"""
         if not psutil:
             return []
-            
+    
         editors = set()
         try:
             processes = self._get_processes_using_file(file_path)
+    
             for process in processes:
-                editors.add(process['username'])
+                username = process['username']
+        
+                # Нормализуем имя пользователя
+                normalized_username = self._normalize_username(username)
+        
+                # Исключаем системных пользователей
+                if normalized_username.lower() in ['system', 'network service', 'local service']:
+                    continue
+            
+                editors.add(normalized_username)
+    
+            # Если нашли редакторов через процессы - возвращаем их и ОБНОВЛЯЕМ кэш
+            if editors:
+                editors_list = list(editors)
+                self.logger.info(f"🔍 Found ACTIVE editors via processes for {file_path}: {editors_list}")
+            
+                # ОБНОВЛЯЕМ кэш редакторов
+                self.file_editors[file_path] = {
+                    'primary_editor': editors_list[0],
+                    'co_editors': set(editors_list[1:]) if len(editors_list) > 1 else set(),
+                    'last_activity_by_user': {editor: datetime.now() for editor in editors_list},
+                    'established_at': datetime.now()
+                }
+                return editors_list
+    
+            # ЕСЛИ ПРОЦЕССОВ НЕ НАЙДЕНО - ОЧИЩАЕМ КЭШ РЕДАКТОРОВ
+            if file_path in self.file_editors:
+                self.logger.info(f"🧹 Clearing editor cache for {file_path} - no active processes found")
+                del self.file_editors[file_path]
+            
         except Exception as e:
             self.logger.debug(f"Error getting current editors for {file_path}: {e}")
-            
-        return list(editors)
+            # При ошибке также очищаем кэш
+            if file_path in self.file_editors:
+                del self.file_editors[file_path]
+    
+        return []
 
+    
     def _determine_primary_editor(self, file_path: str, current_username: str, all_editors: List[str]) -> str:
-        """Определяет основного редактора файла"""
-        if file_path not in self.file_editors:
+        """Определяет основного редактора файла с приоритетом по реальным процессам - ИСПРАВЛЕННАЯ ВЕРСИЯ"""
+
+        # ПРИОРИТЕТ 1: Если есть реальные редакторы из процессов - берем самого активного
+        if all_editors:
+            primary_editor = all_editors[0]  # Первый в списке - самый активный
+            self.logger.info(f"👑 Primary editor from ACTIVE processes: {primary_editor} for {file_path}")
+    
+            # ОБНОВЛЯЕМ информацию о редакторах
             self.file_editors[file_path] = {
-                'primary_editor': current_username,
-                'co_editors': set(),
-                'last_activity_by_user': {current_username: datetime.now()},
+                'primary_editor': primary_editor,
+                'co_editors': set(all_editors[1:]),
+                'last_activity_by_user': {editor: datetime.now() for editor in all_editors},
                 'established_at': datetime.now()
             }
-            self.logger.info(f"👑 {current_username} established as primary editor for {file_path}")
-            return current_username
-        
-        editor_info = self.file_editors[file_path]
-        primary_editor = editor_info['primary_editor']
-        
-        # Обновляем информацию о со-редакторах
-        for editor in all_editors:
-            if editor != primary_editor:
-                editor_info['co_editors'].add(editor)
-            editor_info['last_activity_by_user'][editor] = datetime.now()
-        
-        # Если основной редактор больше не работает с файлом, ищем нового
-        if (primary_editor not in all_editors and 
-            datetime.now() - editor_info['last_activity_by_user'].get(primary_editor, datetime.now()) > timedelta(minutes=5)):
-            
-            if all_editors:
-                new_primary = max(all_editors, key=lambda u: editor_info['last_activity_by_user'].get(u, datetime.min))
-                editor_info['primary_editor'] = new_primary
-                self.logger.info(f"🔄 Primary editor changed from {primary_editor} to {new_primary} for {file_path}")
-                self.stats['session_conflicts_resolved'] += 1
-                return new_primary
-        
-        return primary_editor
+            return primary_editor
 
-    def _handle_file_created(self, file_path: str, username: str, current_editors: List[str]) -> bool:
-        """Обрабатывает создание файла"""
-        if file_path in self.file_renames.values() or file_path in self.file_move_chains.values():
-            self.logger.debug(f"Ignoring created event for moved file: {file_path}")
-            return True
-            
-        self.logger.info(f"📄 Main file created: {file_path} by {username}")
-        
-        # Определяем основного редактора
-        primary_editor = self._determine_primary_editor(file_path, username, current_editors)
-        
-        # Вычисляем хеш если нужно
-        file_hash = None
-        if (self.config.get('hashing', {}).get('enabled', True) and
-            os.path.exists(file_path)):
-            file_hash = self.hash_calculator.calculate_file_hash_with_retry(file_path)
-        
-        # Создаем сессию с основным редактором
-        session_data = self.session_manager.smart_create_session(file_path, primary_editor, file_hash)
-        
-        # Добавляем информацию о со-редакторах в сессию
-        if len(current_editors) > 1:
-            session_data['co_editors'] = [editor for editor in current_editors if editor != primary_editor]
-            session_data['is_multi_user'] = True
-            self.logger.info(f"👥 Multi-user session created for {file_path}. Primary: {primary_editor}, Co-editors: {session_data['co_editors']}")
-        
-        if session_data.get('resume_count', 0) > 0:
-            self.stats['sessions_resumed'] += 1
-            self.logger.info(f"Session resumed for {file_path} (resume count: {session_data['resume_count']})")
-        else:
-            self.stats['sessions_created'] += 1
-        
-        event_data = {
-            'file_path': file_path,
-            'file_name': os.path.basename(file_path),
-            'event_type': 'created',
-            'file_hash': file_hash,
-            'user_id': primary_editor,
-            'session_id': session_data['session_id'],
-            'resume_count': session_data.get('resume_count', 0),
-            'is_multi_user': len(current_editors) > 1,
-            'co_editors': [editor for editor in current_editors if editor != primary_editor],
-            'source': 'server_agent',
-            'event_timestamp': datetime.now().isoformat()
+        # ПРИОРИТЕТ 2: Если нет реальных процессов, НЕ используем кэш - определяем заново
+        self.logger.info(f"👑 Using CURRENT user (no active processes): {current_username} for {file_path}")
+
+        # СОЗДАЕМ НОВУЮ запись вместо использования старого кэша
+        self.file_editors[file_path] = {
+            'primary_editor': current_username,
+            'co_editors': set(),
+            'last_activity_by_user': {current_username: datetime.now()},
+            'established_at': datetime.now()
         }
+
+        return current_username
+    
+    def _handle_file_created(self, file_path: str, username: str, current_editors: List[str]) -> bool:
+            """Обрабатывает создание файла"""
+
+            # Проверяем, есть ли прокомментированная сессия для этого файла и пользователя
+            if self.session_manager.is_session_commented(file_path, username):
+                self.logger.info(f"🚫 Cannot create session for commented file: {file_path} by {username}")
+                # Создаем новую сессию вместо возобновления старой
+                return self._create_new_session_for_commented_file(file_path, username, current_editors)
+            
+            if file_path in self.file_renames.values() or file_path in self.file_move_chains.values():
+                self.logger.debug(f"Ignoring created event for moved file: {file_path}")
+                return True
+            
+            self.logger.info(f"📄 Main file created: {file_path} by {username}")
         
-        success = self.api_client.send_event(event_data)
-        if not success:
-            self.logger.error(f"Failed to send created event for {file_path}: {event_data}")
-        return success
+            # Определяем основного редактора
+            primary_editor = self._determine_primary_editor(file_path, username, current_editors)
+        
+            # Вычисляем хеш если нужно
+            file_hash = None
+            if (self.config.get('hashing', {}).get('enabled', True) and
+                os.path.exists(file_path)):
+                file_hash = self.hash_calculator.calculate_file_hash_with_retry(file_path)
+        
+            # Создаем сессию с основным редактором
+            session_data = self.session_manager.smart_create_session(file_path, primary_editor, file_hash)
+        
+            # Добавляем информацию о со-редакторах в сессию
+            if len(current_editors) > 1:
+                session_data['co_editors'] = [editor for editor in current_editors if editor != primary_editor]
+                session_data['is_multi_user'] = True
+                self.logger.info(f"👥 Multi-user session created for {file_path}. Primary: {primary_editor}, Co-editors: {session_data['co_editors']}")
+        
+            if session_data.get('resume_count', 0) > 0:
+                self.stats['sessions_resumed'] += 1
+                self.logger.info(f"Session resumed for {file_path} (resume count: {session_data['resume_count']})")
+            else:
+                self.stats['sessions_created'] += 1
+        
+            event_data = {
+                'file_path': file_path,
+                'file_name': os.path.basename(file_path),
+                'event_type': 'created',
+                'file_hash': file_hash,
+                'user_id': primary_editor,
+                'session_id': session_data['session_id'],
+                'resume_count': session_data.get('resume_count', 0),
+                'is_multi_user': len(current_editors) > 1,
+                'co_editors': [editor for editor in current_editors if editor != primary_editor],
+                'source': 'server_agent',
+                'event_timestamp': datetime.now().isoformat()
+            }
+        
+            success = self.api_client.send_event(event_data)
+            if not success:
+                self.logger.error(f"Failed to send created event for {file_path}: {event_data}")
+            return success    
 
     def _handle_file_modified(self, file_path: str, username: str, current_editors: List[str]) -> bool:
         """Обрабатывает изменение файла с поддержкой многопользовательской работы"""
         self.logger.debug(f"📝 Main file modified: {file_path} by {username}")
-        
+    
+        # Проверяем можно ли возобновить сессию
+        if not self.session_manager.can_resume_session(file_path, username):
+            self.logger.info(f"🆕 Creating new session (cannot resume): {file_path} by {username}")
+            # Создаем новую сессию вместо возобновления
+            return self._create_new_session_directly(file_path, username, current_editors)
+
         # Определяем основного редактора
         primary_editor = self._determine_primary_editor(file_path, username, current_editors)
-        
+    
         # Вычисляем хеш если нужно
         file_hash = None
         if (self.config.get('hashing', {}).get('enabled', True) and
             os.path.exists(file_path)):
             file_hash = self.hash_calculator.calculate_file_hash_with_retry(file_path)
-        
+    
         # Обновляем сессию с основным редактором
         session_data = self.session_manager.smart_create_session(file_path, primary_editor, file_hash)
-        
+
         # ДОБАВЛЕНО: Обновляем информацию о со-редакторах
         if len(current_editors) > 1:
             session_data['co_editors'] = [editor for editor in current_editors if editor != primary_editor]
             session_data['is_multi_user'] = True
-        
+    
         event_data = {
             'file_path': file_path,
             'file_name': os.path.basename(file_path),
@@ -410,12 +525,13 @@ class EventHandler:
             'source': 'server_agent',
             'event_timestamp': datetime.now().isoformat()
         }
-        
+    
         success = self.api_client.send_event(event_data)
         if not success:
             self.logger.error(f"Failed to send modified event for {file_path}: {event_data}")
         return success
-
+    
+    
     def _handle_file_deleted(self, file_path: str, username: str, current_editors: List[str]) -> bool:
         """Обрабатывает удаление файла с поддержкой многопользовательской работы"""
         if file_path in self.file_renames or file_path in self.file_move_chains:
@@ -1069,17 +1185,28 @@ class EventHandler:
         
         return None
 
-    def _normalize_username(self, username: str) -> str:
-        """Нормализует имя пользователя к единому формату"""
-        if not username:
-            return getpass.getuser()
+    # def _normalize_username(self, username: str) -> str:
+    #     """Нормализует имя пользователя к единому формату"""
+    #     if not username:
+    #         return getpass.getuser()
         
+    #     if '\\' in username:
+    #         parts = username.split('\\')
+    #         normalized = parts[-1]
+    #         self.logger.debug(f"Normalized username: {username} -> {normalized}")
+    #         return normalized
+        
+    #     return username
+
+
+    def _normalize_username(self, username: str) -> str:
+        """Нормализует имя пользователя к единому формату - УЛУЧШЕННАЯ ВЕРСИЯ"""
+        if not username or username == 'unknown':
+            return getpass.getuser()
+    
         if '\\' in username:
             parts = username.split('\\')
-            normalized = parts[-1]
-            self.logger.debug(f"Normalized username: {username} -> {normalized}")
-            return normalized
-        
+            return parts[-1]
         return username
 
     def _should_process_event(self, file_path: str, event_type: str) -> bool:
@@ -1131,40 +1258,160 @@ class EventHandler:
             self.logger.debug(f"Error checking if file is opened: {e}")
             return True
 
+    # def _get_processes_using_file(self, file_path: str) -> list:
+    #     """Возвращает список процессов, использующих файл - УЛУЧШЕННАЯ ВЕРСИЯ"""
+    #     if not psutil:
+    #         return []
+        
+    #     processes = []
+    #     try:
+    #         normalized_path = os.path.normpath(file_path).lower()
+        
+    #         for proc in psutil.process_iter(['pid', 'name', 'username', 'open_files']):
+    #             try:
+    #                 # Пропускаем системные процессы
+    #                 if proc.info['name'].lower() in ['system', 'svchost.exe', 'explorer.exe']:
+    #                     continue
+                    
+    #                 open_files = proc.info.get('open_files')
+    #                 if open_files is None:
+    #                     continue
+                        
+    #                 for file in open_files:
+    #                     open_file_path = os.path.normpath(file.path).lower()
+    #                     if open_file_path == normalized_path:
+    #                         process_username = self._normalize_username(proc.info.get('username', 'unknown'))
+                        
+    #                         # Дополнительная проверка: исключаем очевидно системных пользователей
+    #                         if not process_username or process_username.lower() in ['system', 'network service']:
+    #                             continue
+                            
+    #                         processes.append({
+    #                             'pid': proc.pid,
+    #                             'name': proc.info['name'],
+    #                             'username': process_username
+    #                         })
+    #                         break
+                        
+    #             except (psutil.NoSuchProcess, psutil.AccessDenied, FileNotFoundError):
+    #                 continue
+                
+    #         # Логируем результат поиска
+    #         if processes:
+    #             usernames = [p['username'] for p in processes]
+    #             self.logger.debug(f"🔍 Found {len(processes)} processes for {file_path}: {usernames}")
+    #         else:
+    #             self.logger.debug(f"🔍 No active processes found for {file_path}")
+            
+    #     except Exception as e:
+    #         self.logger.debug(f"Error getting processes for {file_path}: {e}")
+        
+    #     return processes
+
+
+    # def _get_processes_using_file(self, file_path: str) -> list:
+    #     """Возвращает список процессов, использующих файл - ДИАГНОСТИЧЕСКАЯ ВЕРСИЯ"""
+    #     if not psutil:
+    #         return []
+        
+    #     processes = []
+    #     try:
+    #         normalized_path = os.path.normpath(file_path).lower()
+    #         self.logger.info(f"🔍 Searching processes for file: {file_path}")
+        
+    #         for proc in psutil.process_iter(['pid', 'name', 'username', 'open_files']):
+    #             try:
+    #                 # Логируем ВСЕ процессы для диагностики
+    #                 proc_name = proc.info['name']
+    #                 proc_user = proc.info.get('username', 'unknown')
+                
+    #                 open_files = proc.info.get('open_files')
+    #                 if open_files is None:
+    #                     continue
+                    
+    #                 for file in open_files:
+    #                     open_file_path = os.path.normpath(file.path).lower()
+    #                     if open_file_path == normalized_path:
+    #                         process_username = self._normalize_username(proc_user)
+                        
+    #                         self.logger.info(f"🎯 FOUND PROCESS: {proc_name} (PID: {proc.pid}) by {proc_user} -> normalized: {process_username}")
+                        
+    #                         processes.append({
+    #                             'pid': proc.pid,
+    #                             'name': proc_name,
+    #                             'username': process_username,
+    #                             'raw_username': proc_user  # Добавляем для диагностики
+    #                         })
+    #                         break
+                        
+    #             except (psutil.NoSuchProcess, psutil.AccessDenied, FileNotFoundError) as e:
+    #                 self.logger.debug(f"⚠️ Process access error: {e}")
+    #                 continue
+                
+    #         # Детальное логирование результата
+    #         if processes:
+    #             usernames = [p['username'] for p in processes]
+    #             raw_usernames = [p['raw_username'] for p in processes]
+    #             self.logger.info(f"✅ Found {len(processes)} processes for {file_path}: {usernames} (raw: {raw_usernames})")
+    #         else:
+    #             self.logger.warning(f"❌ No processes found for {file_path}")
+            
+    #     except Exception as e:
+    #         self.logger.error(f"❌ Error getting processes for {file_path}: {e}")
+        
+    #     return processes
+
     def _get_processes_using_file(self, file_path: str) -> list:
-        """Возвращает список процессов, использующих файл"""
+        """Возвращает список процессов, использующих файл - ОПТИМИЗИРОВАННАЯ ВЕРСИЯ"""
         if not psutil:
             return []
-            
+
         processes = []
         try:
             normalized_path = os.path.normpath(file_path).lower()
-            
+        
+            # УПРОЩЕННОЕ ЛОГИРОВАНИЕ - только при нахождении процессов
             for proc in psutil.process_iter(['pid', 'name', 'username', 'open_files']):
                 try:
+                    proc_name = proc.info['name']
+                
+                    # Быстрая проверка системных процессов
+                    if proc_name.lower() in ['system', 'svchost.exe', 'explorer.exe']:
+                        continue
+                    
                     open_files = proc.info.get('open_files')
                     if open_files is None:
                         continue
-                        
+                
                     for file in open_files:
                         open_file_path = os.path.normpath(file.path).lower()
                         if open_file_path == normalized_path:
                             process_username = self._normalize_username(proc.info.get('username', 'unknown'))
+                        
+                            # Фильтр системных пользователей
+                            if not process_username or process_username.lower() in ['system', 'network service']:
+                                continue
+                            
                             processes.append({
                                 'pid': proc.pid,
-                                'name': proc.info['name'],
+                                'name': proc_name,
                                 'username': process_username
                             })
                             break
-                            
+                        
                 except (psutil.NoSuchProcess, psutil.AccessDenied, FileNotFoundError):
                     continue
-                    
-        except Exception as e:
-            self.logger.debug(f"Error getting processes for {file_path}: {e}")
+        
+            # ЛОГИРОВАТЬ ТОЛЬКО ПРИ НАЛИЧИИ ПРОЦЕССОВ ИЛИ ОШИБКАХ
+            if processes:
+                usernames = [p['username'] for p in processes]
+                self.logger.debug(f"🔍 Found {len(processes)} processes for {os.path.basename(file_path)}: {usernames}")
             
+        except Exception as e:
+            self.logger.error(f"❌ Error getting processes for {file_path}: {e}")
+    
         return processes
-
+    
     def _update_open_file_tracking(self, file_path: str, username: str, event_type: str):
         """Обновляет информацию об открытых файлах"""
         if not psutil:
@@ -1407,3 +1654,223 @@ class EventHandler:
         
         self.check_open_files()
         self.cleanup_orphaned_sessions()
+
+    def notify_other_agents(self, endpoint: str, data: dict):
+        """Уведомляет другие агенты о событиях"""
+        for agent_url in self.other_agents:
+            try:
+                full_url = f"{agent_url}/api/agent/{endpoint}"
+                response = requests.post(
+                    full_url,
+                    json=data,
+                    timeout=5
+                )
+                if response.status_code == 200:
+                    self.logger.debug(f"✅ Notified agent {agent_url} about {endpoint}")
+                else:
+                    self.logger.warning(f"⚠️ Agent {agent_url} returned {response.status_code}")
+            except Exception as e:
+                self.logger.debug(f"🔇 Could not notify agent {agent_url}: {e}")    
+
+    def get_file_status(self, file_path: str) -> dict:
+
+        """Возвращает статус файла для отображения в мониторинге"""
+        status = {
+            'file_path': file_path,
+            'status': 'unknown',
+            'icon': '⚪',
+            'description': 'Не отслеживается'
+        }
+        
+        # Проверяем прокомментированные файлы
+        if file_path in self.commented_files:
+            comment_info = self.commented_files[file_path]
+            status.update({
+                'status': 'commented',
+                'icon': '🟢',
+                'description': f'Прокомментирован {comment_info["username"]}',
+                'commented_at': comment_info['commented_at'],
+                'comment_preview': comment_info['content'][:50] + '...' if len(comment_info['content']) > 50 else comment_info['content']
+            })
+            return status
+        
+        # Проверяем активные сессии
+        for session_key, session_data in self.session_manager.active_sessions.items():
+            if session_data['file_path'] == file_path:
+                editors = []
+                if session_data.get('is_multi_user'):
+                    editors = session_data.get('co_editors', [])
+                    
+                status.update({
+                    'status': 'active',
+                    'icon': '🔴',
+                    'description': f'В работе ({session_data["username"]})',
+                    'started_at': session_data['started_at'],
+                    'username': session_data['username'],
+                    'is_multi_user': session_data.get('is_multi_user', False),
+                    'co_editors': editors
+                })
+                return status
+        
+        # Файл существует но не в работе
+        if os.path.exists(file_path):
+            status.update({
+                'status': 'available',
+                'icon': '⚪',
+                'description': 'Доступен для работы'
+            })
+        
+        return status
+    
+    def handle_comment_notification(self, session_id: str, file_path: str, username: str, comment_data: dict):
+        """Обрабатывает уведомление о комментарии от сервера"""
+        try:
+            self.logger.info(f"💬 Processing comment notification for session {session_id}, file {file_path}")
+        
+            # Помечаем сессию как прокомментированную в локальном менеджере
+            success = self.session_manager.mark_session_as_commented(file_path, username)
+        
+            if success:
+                self.logger.info(f"✅ Marked session as commented: {file_path} by {username}")
+            
+                # Сохраняем информацию о прокомментированном файле
+                self.commented_files[file_path] = {
+                    'commented_at': datetime.now(),
+                    'username': username,
+                    'session_id': session_id,
+                    'content': comment_data.get('content', ''),
+                    'change_type': comment_data.get('change_type', 'other'),
+                    'created_at': comment_data.get('created_at', datetime.now().isoformat())
+                }
+            
+                # Закрываем все активные сессии для этого файла
+                closed_sessions = self.session_manager.close_all_sessions_for_file(file_path)
+                self.logger.info(f"🔒 Closed {len(closed_sessions)} sessions for commented file: {file_path}")
+            
+            else:
+                self.logger.warning(f"⚠️ Could not find session to mark as commented: {file_path} by {username}")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error processing comment notification: {e}")
+
+    def is_file_commented(self, file_path: str) -> bool:
+        """Проверяет был ли файл прокомментирован"""
+        return file_path in self.commented_files
+
+    def can_create_session_for_file(self, file_path: str, username: str) -> bool:
+        """Проверяет можно ли создать сессию для файла"""
+        # Не создаем сессии для прокомментированных файлов
+        if self.is_file_commented(file_path):
+            self.logger.debug(f"🚫 Cannot create session for commented file: {file_path}")
+            return False
+        
+        # Проверяем есть ли прокомментированная сессия у этого пользователя
+        if self.session_manager.is_session_commented(file_path, username):
+            self.logger.debug(f"🚫 User {username} has commented session for file: {file_path}")
+            return False
+    
+        # Проверяем есть ли активная сессия у другого пользователя
+        for session_key, session_data in self.session_manager.active_sessions.items():
+            if (session_data['file_path'] == file_path and 
+                    session_data['username'] != username):
+                self.logger.debug(f"👥 File {file_path} already has active session by {session_data['username']}")
+                return True  # Разрешаем многопользовательскую работу
+    
+        return True
+    
+    def _create_new_session_for_commented_file(self, file_path: str, username: str, current_editors: List[str]) -> bool:
+        """Создает новую сессию для файла с прокомментированной историей"""
+        self.logger.info(f"🆕 Creating new session for previously commented file: {file_path} by {username}")
+    
+        # Определяем основного редактора
+        primary_editor = self._determine_primary_editor(file_path, username, current_editors)
+    
+        # Вычисляем хеш если нужно
+        file_hash = None
+        if (self.config.get('hashing', {}).get('enabled', True) and
+            os.path.exists(file_path)):
+            file_hash = self.hash_calculator.calculate_file_hash_with_retry(file_path)
+    
+        # Принудительно создаем новую сессию (не используем smart_create_session)
+        session_data = self.session_manager._create_new_session(file_path, primary_editor, file_hash)
+    
+        # Добавляем информацию о со-редакторах в сессию
+        if len(current_editors) > 1:
+            session_data['co_editors'] = [editor for editor in current_editors if editor != primary_editor]
+            session_data['is_multi_user'] = True
+            self.logger.info(f"👥 Multi-user session created for commented file: {file_path}. Primary: {primary_editor}, Co-editors: {session_data['co_editors']}")
+    
+        self.stats['sessions_created'] += 1
+    
+        event_data = {
+            'file_path': file_path,
+            'file_name': os.path.basename(file_path),
+            'event_type': 'created',
+            'file_hash': file_hash,
+            'user_id': primary_editor,
+            'session_id': session_data['session_id'],
+            'resume_count': 0,  # Всегда 0 для новых сессий после комментария
+            'is_multi_user': len(current_editors) > 1,
+            'co_editors': [editor for editor in current_editors if editor != primary_editor],
+            'is_new_after_comment': True,  # Флаг что это новая сессия после комментария
+            'source': 'server_agent',
+            'event_timestamp': datetime.now().isoformat()
+        }
+    
+        success = self.api_client.send_event(event_data)
+        if not success:
+            self.logger.error(f"Failed to send created event for commented file {file_path}: {event_data}")
+        return success
+    
+    def get_session_status(self, file_path: str, username: str) -> dict:
+        """Возвращает статус сессии для файла и пользователя"""
+        session_key = f"{file_path}:{username}"
+    
+        if session_key in self.session_manager.active_sessions:
+            return {
+                "status": "active",
+                "session_data": self.session_manager.active_sessions[session_key]
+            }
+        else:
+            return {
+                "status": "closed",
+                "session_data": None
+            }
+        
+
+    def _create_new_session_directly(self, file_path: str, username: str, current_editors: List[str]) -> bool:
+        """Создает новую сессию без попытки возобновления"""
+        primary_editor = self._determine_primary_editor(file_path, username, current_editors)
+    
+        file_hash = None
+        if (self.config.get('hashing', {}).get('enabled', True) and
+            os.path.exists(file_path)):
+            file_hash = self.hash_calculator.calculate_file_hash_with_retry(file_path)
+    
+        # Принудительно создаем новую сессию
+        session_data = self.session_manager._create_new_session(file_path, primary_editor, file_hash)
+    
+        # Добавляем информацию о со-редакторах
+        if len(current_editors) > 1:
+            session_data['co_editors'] = [editor for editor in current_editors if editor != primary_editor]
+            session_data['is_multi_user'] = True
+    
+        event_data = {
+            'file_path': file_path,
+            'file_name': os.path.basename(file_path),
+            'event_type': 'modified',
+            'file_hash': file_hash,
+            'user_id': primary_editor,
+            'session_id': session_data['session_id'],
+            'resume_count': 0,  # Всегда 0 для новой сессии
+            'is_multi_user': len(current_editors) > 1,
+            'co_editors': [editor for editor in current_editors if editor != primary_editor],
+            'is_new_session': True,  # Флаг что это новая сессия
+            'source': 'server_agent',
+            'event_timestamp': datetime.now().isoformat()
+        }
+    
+        success = self.api_client.send_event(event_data)
+        if not success:
+            self.logger.error(f"Failed to send modified event for {file_path}")
+        return success

@@ -1,0 +1,91 @@
+<!-- all_history.html -->
+{% extends "base.html" %}
+
+{% block title %}Изменения всех пользователей - Менеджер сессий{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1 class="mb-4">
+            <i class="fas fa-users me-2"></i>Изменения всех пользователей
+        </h1>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-3">
+        <label class="form-label">Сортировка по:</label>
+        <select class="form-select sort-select" onchange="changeSort(this.value)">
+            <option value="date" {% if sort_by == 'date' %}selected{% endif %}>Дате</option>
+            <option value="user" {% if sort_by == 'user' %}selected{% endif %}>Пользователю</option>
+            <option value="project" {% if sort_by == 'project' %}selected{% endif %}>Проекту</option>
+            <option value="change_type" {% if sort_by == 'change_type' %}selected{% endif %}>Типу изменения</option>
+        </select>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-info text-white">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-list me-2"></i>Список изменений
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if sessions %}
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Пользователь</th>
+                                <th>Файл</th>
+                                <th>Дата</th>
+                                <th>Проект (путь)</th>
+                                <th>Тип изменения</th>
+                                <th>Комментарий</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for session in sessions %}
+                            <tr>
+                                <td>{{ session.username }}</td>
+                                <td>
+                                    <i class="fas fa-file me-1"></i>
+                                    {{ session.file_name | default('Неизвестно', true) }}
+                                </td>
+                                <td>{{ session.started_at[:19] }}</td>
+                                <td>{{ session.file_path | default('Неизвестно', true) }}</td>
+                                <td>
+                                    <span class="badge change-type-{{ session.comment.change_type|replace(' ', '_')|lower }}">
+                                        {{ session.comment.change_type|title }}
+                                    </span>
+                                </td>
+                                <td>{{ session.comment.content }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-5">
+                    <i class="fas fa-folder-open fa-3x text-muted mb-3"></i>
+                    <p class="text-muted">Изменения не найдены</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function changeSort(value) {
+    const url = new URL(window.location);
+    url.searchParams.set('sort_by', value);
+    window.location.href = url.toString();
+}
+</script>
+{% endblock %}

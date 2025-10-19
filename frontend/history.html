@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Monitoring - User History</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <header>
+        <h1>Your History</h1>
+        <nav>
+            <a href="sessions.html">Sessions</a> | <a href="changes.html">All Changes</a> | <a href="index.html" id="logout">Logout</a>
+        </nav>
+    </header>
+    <main>
+        <section>
+            <h2>Active Files</h2>
+            <ul id="active-files"></ul>
+        </section>
+        <section>
+            <h2>Recent Files (last 24h)</h2>
+            <ul id="recent-files"></ul>
+        </section>
+    </main>
+    <footer>
+        <p>&copy; 2025 File Monitoring</p>
+    </footer>
+    <script src="js/api.js"></script>
+    <script src="js/history.js"></script>
+</body>
+</html>

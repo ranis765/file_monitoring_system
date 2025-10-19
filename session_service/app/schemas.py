@@ -40,9 +40,12 @@ class FileSessionBase(BaseModel):
     hash_before: Optional[str] = None
     hash_after: Optional[str] = None
     resume_count: int = 0
+    is_commented: bool = False
 
 class FileSessionCreate(FileSessionBase):
-    pass
+    id: Optional[uuid.UUID] = None  # ДОБАВЛЕНО: опциональный ID для создания с указанным ID
+    
+    model_config = ConfigDict(from_attributes=True)
 
 class FileSession(FileSessionBase):
     id: uuid.UUID
@@ -66,12 +69,12 @@ class FileEvent(FileEventBase):
     
     model_config = ConfigDict(from_attributes=True)
 
-# Comment Schemas (ОБНОВЛЕНЫ - добавлен change_type)
+# Comment Schemas
 class CommentBase(BaseModel):
     session_id: uuid.UUID
     user_id: uuid.UUID
     content: str
-    change_type: str = "other"  # НОВОЕ ПОЛЕ
+    change_type: str = "other"
 
 class CommentCreate(CommentBase):
     pass
@@ -98,7 +101,7 @@ class Report(ReportBase):
     
     model_config = ConfigDict(from_attributes=True)
 
-# Дополнительные схемы для API (ДОБАВЬТЕ ЭТИ КЛАССЫ)
+# Дополнительные схемы для API
 class CommentWithUser(BaseModel):
     id: uuid.UUID
     content: str

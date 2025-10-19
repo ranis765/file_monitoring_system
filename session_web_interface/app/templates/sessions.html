@@ -1,206 +1,105 @@
+
 {% extends "base.html" %}
 
-{% block title %}My Sessions - Session Manager{% endblock %}
+{% block title %}Мои сессии - Менеджер сессий{% endblock %}
 
 {% block content %}
 <div class="row">
     <div class="col-12">
         <h1 class="mb-4">
-            <i class="fas fa-edit me-2"></i>My Sessions
+            <i class="fas fa-edit me-2"></i>Мои сессии
         </h1>
     </div>
 </div>
 
-<!-- Active Sessions -->
-<div class="row mb-5">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header bg-success text-white">
-                <h5 class="card-title mb-0">
-                    <i class="fas fa-play-circle me-2"></i>Active Editing Sessions
-                </h5>
-            </div>
-            <div class="card-body">
-                {% if active_files %}
-                <div class="row">
-                    {% for file in active_files %}
-                    <div class="col-md-6 col-lg-4 mb-4">
-                        <div class="card session-card h-100">
-                            <div class="card-header">
-                                <h6 class="card-title mb-0 text-truncate">
-                                    <i class="fas fa-file-code me-1"></i>{{ file.file_name }}
-                                </h6>
-                            </div>
-                            <div class="card-body">
-                                <p class="card-text">
-                                    <small class="text-muted">
-                                        <i class="fas fa-folder me-1"></i>
-                                        {{ file.file_path }}
-                                    </small>
-                                </p>
-                                <div class="session-info">
-                                    <p><strong>Started:</strong> {{ file.session_started[:19] }}</p>
-                                    <p><strong>Last Activity:</strong> {{ file.last_activity[:19] }}</p>
-                                </div>
-                                
-                                <!-- Comment Form -->
-                                <form method="post" action="/comment" class="mt-3">
-                                    <input type="hidden" name="username" value="{{ username }}">
-                                    <input type="hidden" name="session_id" value="{{ file.session_id }}">
-                                    
-                                    <div class="mb-3">
-                                        <label class="form-label">Change Type:</label>
-                                        <select name="change_type" class="form-select" required>
-                                            <option value="">Select change type...</option>
-                                            {% for change_type in change_types %}
-                                            <option value="{{ change_type }}">{{ change_type|replace('_', ' ')|title }}</option>
-                                            {% endfor %}
-                                        </select>
-                                    </div>
-                                    
-                                    <div class="mb-3">
-                                        <label class="form-label">Comment:</label>
-                                        <textarea name="content" class="form-control" rows="3" 
-                                                  placeholder="Describe what changes you made..." required></textarea>
-                                    </div>
-                                    
-                                    <button type="submit" class="btn btn-primary w-100">
-                                        <i class="fas fa-comment me-1"></i>Add Comment
-                                    </button>
-                                </form>
-                            </div>
-                        </div>
-                    </div>
-                    {% endfor %}
-                </div>
-                {% else %}
-                <div class="text-center py-4">
-                    <i class="fas fa-clock fa-3x text-muted mb-3"></i>
-                    <p class="text-muted">No active editing sessions</p>
-                </div>
-                {% endif %}
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Recent Sessions -->
+<!-- Список изменений с сортировкой по дням -->
 <div class="row">
     <div class="col-12">
         <div class="card">
-            <div class="card-header bg-secondary text-white">
+            <div class="card-header bg-primary text-white">
                 <h5 class="card-title mb-0">
-                    <i class="fas fa-history me-2"></i>Recently Closed Sessions
+                    <i class="fas fa-list me-2"></i>Список моих изменений
                 </h5>
             </div>
             <div class="card-body">
-                {% if recent_files %}
-                <div class="table-responsive">
-                    <table class="table table-striped">
-                        <thead>
-                            <tr>
-                                <th>File</th>
-                                <th>Started</th>
-                                <th>Ended</th>
-                                <th>Duration</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for file in recent_files %}
-                            <tr>
-                                <td>
-                                    <i class="fas fa-file me-1"></i>
-                                    {{ file.file_name }}
-                                    <br>
-                                    <small class="text-muted">{{ file.file_path }}</small>
-                                </td>
-                                <td>{{ file.session_started[:19] }}</td>
-                                <td>{{ file.session_ended[:19] }}</td>
-                                <td>{{ (file.session_duration / 60)|round(1) }} min</td>
-                                <td>
-                                    <button class="btn btn-sm btn-outline-primary" 
-                                            data-bs-toggle="modal" 
-                                            data-bs-target="#commentModal"
-                                            data-session-id="{{ file.session_id }}"
-                                            data-file-name="{{ file.file_name }}">
-                                        <i class="fas fa-comment me-1"></i>Comment
-                                    </button>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+                {% if sessions %}
+                {% set grouped_sessions = {} %}
+                {% for session in sessions %}
+                    {% set day = session.started_at[:10] %}
+                    {% if day not in grouped_sessions %}
+                        {% set _ = grouped_sessions.update({day: []}) %}
+                    {% endif %}
+                    {% set _ = grouped_sessions[day].append(session) %}
+                {% endfor %}
+                
+                {% for day, day_sessions in grouped_sessions.items() | sort(reverse=True) %}
+                <div class="day-group">
+                    <h5 class="day-header">
+                        <i class="fas fa-calendar-day me-2"></i>{{ day }}
+                    </h5>
+                    <div class="row">
+                        {% for session in day_sessions %}
+                        <div class="col-md-6 col-lg-4 mb-4">
+                            <div class="card session-card h-100">
+                                <div class="card-header">
+                                    <h6 class="card-title mb-0 text-truncate">
+                                        <i class="fas fa-file-code me-1"></i>{{ session.file_name }}
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <p><strong>Путь:</strong> {{ session.file_path | default('Неизвестно', true) }}</p>
+                                    <p><strong>Дата:</strong> {{ session.started_at[:19] }}</p>
+                                    <p><strong>Комментарий:</strong> {{ session.comment.content if session.comment else 'Нет' }}</p>
+                                    <p><strong>Тип:</strong> {{ session.comment.change_type|replace('_', ' ')|title if session.comment else 'Нет' }}</p>
+                                    
+                                    {% if not session.is_commented %}
+                                    <!-- Форма для добавления комментария -->
+                                    <form method="post" action="/comment" class="mt-3">
+                                        <input type="hidden" name="username" value="{{ username }}">
+                                        <input type="hidden" name="session_id" value="{{ session.id }}">
+                                        
+                                        <div class="mb-3">
+                                            <label class="form-label">Тип изменения:</label>
+                                            <select name="change_type" class="form-select" required>
+                                                <option value="">Выберите тип...</option>
+                                                <option value="корректировка_трассы">Корректировка трассы</option>
+                                                <option value="изменения_в_продольном_профиле">Изменения в продольном профиле</option>
+                                                <option value="обновление_поперечных_сечений">Обновление поперечных сечений</option>
+                                                <option value="добавление_дорожных_сооружений">Добавление дорожных сооружений</option>
+                                                <option value="корректировка_расчетов">Корректировка расчетов</option>
+                                                <option value="изменения_в_чертежах">Изменения в чертежах</option>
+                                                <option value="обновление_спецификаций">Обновление спецификаций</option>
+                                                <option value="экологические_корректировки">Экологические корректировки</option>
+                                                <option value="сметные_изменения">Сметные изменения</option>
+                                                <option value="другое">Другое</option>
+                                            </select>
+                                        </div>
+                                        
+                                        <div class="mb-3">
+                                            <label class="form-label">Комментарий:</label>
+                                            <textarea name="content" class="form-control" rows="3" required></textarea>
+                                        </div>
+                                        
+                                        <button type="submit" class="btn btn-primary w-100">
+                                            <i class="fas fa-comment me-1"></i>Добавить
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
                 </div>
+                {% endfor %}
                 {% else %}
                 <div class="text-center py-4">
                     <i class="fas fa-folder-open fa-3x text-muted mb-3"></i>
-                    <p class="text-muted">No recent sessions</p>
+                    <p class="text-muted">Нет сессий</p>
                 </div>
                 {% endif %}
             </div>
         </div>
     </div>
 </div>
-
-<!-- Comment Modal for Recent Sessions -->
-<div class="modal fade" id="commentModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Add Comment</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <form method="post" action="/comment">
-                <div class="modal-body">
-                    <input type="hidden" name="username" value="{{ username }}">
-                    <input type="hidden" name="session_id" id="modalSessionId">
-                    
-                    <div class="mb-3">
-                        <label class="form-label">File:</label>
-                        <input type="text" class="form-control" id="modalFileName" readonly>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label class="form-label">Change Type:</label>
-                        <select name="change_type" class="form-select" required>
-                            <option value="">Select change type...</option>
-                            {% for change_type in change_types %}
-                            <option value="{{ change_type }}">{{ change_type|replace('_', ' ')|title }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label class="form-label">Comment:</label>
-                        <textarea name="content" class="form-control" rows="4" 
-                                  placeholder="Describe what changes you made in this session..." required></textarea>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">
-                        <i class="fas fa-comment me-1"></i>Add Comment
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-{% endblock %}
-
-{% block scripts %}
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    var commentModal = document.getElementById('commentModal');
-    commentModal.addEventListener('show.bs.modal', function (event) {
-        var button = event.relatedTarget;
-        var sessionId = button.getAttribute('data-session-id');
-        var fileName = button.getAttribute('data-file-name');
-        
-        document.getElementById('modalSessionId').value = sessionId;
-        document.getElementById('modalFileName').value = fileName;
-    });
-});
-</script>
 {% endblock %}

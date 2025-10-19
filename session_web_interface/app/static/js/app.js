@@ -1,6 +1,7 @@
-// Global application JavaScript
+// app.js (изменения: все комментарии на русский; добавлены функции для сортировок в all-history)
+/// Глобальный JavaScript приложения
 
-// Auto-dismiss alerts after 5 seconds
+// Автоматическое скрытие алертов через 5 секунд
 document.addEventListener('DOMContentLoaded', function() {
     // Auto-dismiss alerts
     const alerts = document.querySelectorAll('.alert');
@@ -11,28 +12,28 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 5000);
     });
     
-    // Add loading states to buttons
+    // Добавление состояний загрузки к кнопкам
     const forms = document.querySelectorAll('form');
     forms.forEach(form => {
         form.addEventListener('submit', function() {
             const submitBtn = this.querySelector('button[type="submit"]');
             if (submitBtn) {
-                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Processing...';
+                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Обработка...';
                 submitBtn.disabled = true;
             }
         });
     });
 });
 
-// Utility function to format dates
+// Функция форматирования дат
 function formatDate(dateString) {
     if (!dateString) return 'N/A';
     
     const date = new Date(dateString);
-    return date.toLocaleString();
+    return date.toLocaleString('ru-RU');
 }
 
-// Utility function to format duration
+// Функция форматирования длительности
 function formatDuration(seconds) {
     if (!seconds) return 'N/A';
     
@@ -40,13 +41,13 @@ function formatDuration(seconds) {
     const minutes = Math.floor((seconds % 3600) / 60);
     
     if (hours > 0) {
-        return `${hours}h ${minutes}m`;
+        return `${hours}ч ${minutes}м`;
     } else {
-        return `${minutes}m`;
+        return `${minutes}м`;
     }
 }
 
-// API functions
+// Функции API
 async function apiRequest(endpoint, options = {}) {
     try {
         const response = await fetch(endpoint, {
@@ -58,30 +59,30 @@ async function apiRequest(endpoint, options = {}) {
         });
         
         if (!response.ok) {
-            throw new Error(`API error: ${response.status}`);
+            throw new Error(`Ошибка API: ${response.status}`);
         }
         
         return await response.json();
     } catch (error) {
-        console.error('API request failed:', error);
+        console.error('Ошибка запроса API:', error);
         throw error;
     }
 }
 
-// Refresh user data
+// Обновление данных пользователя
 async function refreshUserData(username) {
     try {
         const data = await apiRequest(`/api/user-sessions/${username}`);
         return data;
     } catch (error) {
-        showError('Failed to refresh data');
+        showError('Ошибка обновления данных');
         return null;
     }
 }
 
-// Show error message
+// Показ ошибки
 function showError(message) {
-    // Create toast notification
+    // Создание toast уведомления
     const toast = document.createElement('div');
     toast.className = 'toast align-items-center text-white bg-danger border-0 position-fixed top-0 end-0 m-3';
     toast.style.zIndex = '1060';
@@ -98,15 +99,15 @@ function showError(message) {
     const bsToast = new bootstrap.Toast(toast);
     bsToast.show();
     
-    // Remove toast after hide
+    // Удаление toast после скрытия
     toast.addEventListener('hidden.bs.toast', () => {
         document.body.removeChild(toast);
     });
 }
 
-// Show success message
+// Показ успеха
 function showSuccess(message) {
-    // Create toast notification
+    // Создание toast уведомления
     const toast = document.createElement('div');
     toast.className = 'toast align-items-center text-white bg-success border-0 position-fixed top-0 end-0 m-3';
     toast.style.zIndex = '1060';
@@ -123,13 +124,13 @@ function showSuccess(message) {
     const bsToast = new bootstrap.Toast(toast);
     bsToast.show();
     
-    // Remove toast after hide
+    // Удаление toast после скрытия
     toast.addEventListener('hidden.bs.toast', () => {
         document.body.removeChild(toast);
     });
 }
 
-// Session management functions
+// Функции управления сессиями
 function toggleSessionDetails(sessionId) {
     const details = document.getElementById(`session-details-${sessionId}`);
     if (details) {
@@ -137,7 +138,7 @@ function toggleSessionDetails(sessionId) {
     }
 }
 
-// Auto-refresh data every 30 seconds (optional)
+// Авто-обновление данных каждые 30 секунд (опционально)
 function startAutoRefresh(interval = 30000) {
     setInterval(() => {
         if (document.visibilityState === 'visible') {
@@ -146,7 +147,14 @@ function startAutoRefresh(interval = 30000) {
     }, interval);
 }
 
-// Initialize auto-refresh on dashboard
+// Инициализация авто-обновления на панели
 if (window.location.pathname === '/dashboard') {
-    // startAutoRefresh(); // Uncomment if you want auto-refresh
+    // startAutoRefresh(); // Раскомментировать для авто-обновления
+}
+
+// Добавлено для сортировок в all-history (п.3)
+function changeSort(sortBy) {
+    const url = new URL(window.location);
+    url.searchParams.set('sort_by', sortBy);
+    window.location = url.toString();
 }

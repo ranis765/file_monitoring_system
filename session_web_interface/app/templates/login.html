@@ -1,6 +1,7 @@
+<!-- login.html (изменения: все на русский) -->
 {% extends "base.html" %}
 
-{% block title %}Login - Session Manager{% endblock %}
+{% block title %}Вход - Менеджер сессий{% endblock %}
 
 {% block content %}
 <div class="row justify-content-center">
@@ -8,29 +9,29 @@
         <div class="card shadow">
             <div class="card-body p-5">
                 <h2 class="card-title text-center mb-4">
-                    <i class="fas fa-sign-in-alt me-2"></i>Login
+                    <i class="fas fa-sign-in-alt me-2"></i>Вход
                 </h2>
                 
                 <form method="post" action="/login">
                     <div class="mb-3">
-                        <label for="username" class="form-label">Username</label>
+                        <label for="username" class="form-label">Имя пользователя</label>
                         <input type="text" class="form-control" id="username" name="username" 
-                               placeholder="Enter your username" required>
+                               placeholder="Введите ваше имя пользователя" required>
                         <div class="form-text">
-                            Use the same username that appears in your file monitoring system
+                            Используйте то же имя пользователя, что в системе мониторинга файлов
                         </div>
                     </div>
                     
                     <button type="submit" class="btn btn-primary w-100">
-                        <i class="fas fa-sign-in-alt me-2"></i>Enter System
+                        <i class="fas fa-sign-in-alt me-2"></i>Войти в систему
                     </button>
                 </form>
                 
                 <div class="mt-4 p-3 bg-light rounded">
-                    <h6 class="mb-2">Demo Usernames:</h6>
+                    <h6 class="mb-2">Демо имена пользователей:</h6>
                     <small class="text-muted">
-                        Use any username that matches your monitoring system. 
-                        The system will create user records automatically.
+                        Используйте любое имя, соответствующее вашей системе мониторинга. 
+                        Система автоматически создаст записи пользователя.
                     </small>
                 </div>
             </div>

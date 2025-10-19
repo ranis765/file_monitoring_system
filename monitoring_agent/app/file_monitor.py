@@ -104,7 +104,7 @@ class FileMonitor:
                 time.sleep(self.scan_interval)
             except Exception as e:
                 self.logger.error(f"Error in monitor loop: {e}")
-                time.sleep(5)  # Пауза при ошибке
+                time.sleep(10)  # Пауза при ошибке
 
     def _initial_scan(self):
         """Первоначальное сканирование файлов для установки базового состояния"""
