@@ -1,4 +1,3 @@
-
 {% extends "base.html" %}
 
 {% block title %}Мои сессии - Менеджер сессий{% endblock %}
@@ -6,100 +5,260 @@
 {% block content %}
 <div class="row">
     <div class="col-12">
-        <h1 class="mb-4">
-            <i class="fas fa-edit me-2"></i>Мои сессии
-        </h1>
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>
+                <i class="fas fa-history me-2"></i>Мои сессии
+            </h1>
+            <span class="badge bg-primary fs-6">{{ username }}</span>
+        </div>
     </div>
 </div>
 
-<!-- Список изменений с сортировкой по дням -->
-<div class="row">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header bg-primary text-white">
-                <h5 class="card-title mb-0">
-                    <i class="fas fa-list me-2"></i>Список моих изменений
+{% if error %}
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
+    <i class="fas fa-exclamation-triangle me-2"></i>{{ error }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+{% if request.query_params.get('message') %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+    <i class="fas fa-check-circle me-2"></i>{{ request.query_params.get('message') }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="card-header">
+        <h5 class="card-title mb-0">
+            <i class="fas fa-list me-2"></i>Список сессий
+        </h5>
+    </div>
+    <div class="card-body">
+        {% if sessions %}
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th>Файл</th>
+                        <th>Путь</th>
+                        <th>Начата</th>
+                        <th>Последняя активность</th>
+                        <th>Статус</th>
+                        <th>Тип изменения</th>
+                        <th>Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for session in sessions %}
+                    <tr class="{% if not session.ended_at %}table-success{% elif not session.is_commented %}table-warning{% endif %}">
+                        <td>
+                            <i class="fas fa-file-code me-1"></i>
+                            <strong>{{ session.file_name | default('Неизвестно', true) }}</strong>
+                        </td>
+                        <td>
+                            <small class="text-muted">{{ session.file_path | default('Неизвестно', true) }}</small>
+                        </td>
+                        <td>{{ session.started_at | format_datetime if session.started_at else 'N/A' }}</td>
+                        <td>{{ session.last_activity | format_datetime if session.last_activity else 'N/A' }}</td>
+                        <td>
+                            {% if not session.ended_at %}
+                                <span class="badge bg-success">Активна</span>
+                            {% elif session.is_commented %}
+                                <span class="badge bg-info">Закомментирована</span>
+                            {% else %}
+                                <span class="badge bg-warning">Требует комментария</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if session.comments %}
+                                {% if session.last_comment %}
+                                    <small class="text-muted d-block">
+                                        {{ session.last_comment.change_type | replace('_', ' ') | title }}
+                                    </small>
+                                {% endif %}
+                            {% else %}
+                               
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-primary" 
+                                        data-bs-toggle="modal" 
+                                        data-bs-target="#sessionDetailModal{{ session.id }}">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                                {% if not session.is_commented and session.ended_at %}
+                                <button type="button" class="btn btn-outline-warning" 
+                                        data-bs-toggle="modal" 
+                                        data-bs-target="#commentModal{{ session.id }}">
+                                    <i class="fas fa-comment"></i>
+                                </button>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5">
+            <i class="fas fa-folder-open fa-4x text-muted mb-3"></i>
+            <h4 class="text-muted">Сессии не найдены</h4>
+            <p class="text-muted">У вас пока нет сессий работы с файлами</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Модальные окна для детального просмотра сессий -->
+{% for session in sessions %}
+<div class="modal fade" id="sessionDetailModal{{ session.id }}" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">
+                    <i class="fas fa-info-circle me-2"></i>Детали сессии
                 </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
-            <div class="card-body">
-                {% if sessions %}
-                {% set grouped_sessions = {} %}
-                {% for session in sessions %}
-                    {% set day = session.started_at[:10] %}
-                    {% if day not in grouped_sessions %}
-                        {% set _ = grouped_sessions.update({day: []}) %}
-                    {% endif %}
-                    {% set _ = grouped_sessions[day].append(session) %}
-                {% endfor %}
-                
-                {% for day, day_sessions in grouped_sessions.items() | sort(reverse=True) %}
-                <div class="day-group">
-                    <h5 class="day-header">
-                        <i class="fas fa-calendar-day me-2"></i>{{ day }}
-                    </h5>
-                    <div class="row">
-                        {% for session in day_sessions %}
-                        <div class="col-md-6 col-lg-4 mb-4">
-                            <div class="card session-card h-100">
-                                <div class="card-header">
-                                    <h6 class="card-title mb-0 text-truncate">
-                                        <i class="fas fa-file-code me-1"></i>{{ session.file_name }}
-                                    </h6>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-lg-8">
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                <h6 class="card-title mb-0">
+                                    <i class="fas fa-file-code me-2"></i>Информация о сессии
+                                </h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <p><strong>ID сессии:</strong></p>
+                                        <p><strong>Файл:</strong></p>
+                                        <p><strong>Путь:</strong></p>
+                                        <p><strong>Пользователь:</strong></p>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <p><code>{{ session.id }}</code></p>
+                                        <p>{{ session.file_name | default('Неизвестно', true) }}</p>
+                                        <p><small class="text-muted">{{ session.file_path | default('Неизвестно', true) }}</small></p>
+                                        <p>{{ session.username | default('Неизвестно', true) }}</p>
+                                    </div>
                                 </div>
-                                <div class="card-body">
-                                    <p><strong>Путь:</strong> {{ session.file_path | default('Неизвестно', true) }}</p>
-                                    <p><strong>Дата:</strong> {{ session.started_at[:19] }}</p>
-                                    <p><strong>Комментарий:</strong> {{ session.comment.content if session.comment else 'Нет' }}</p>
-                                    <p><strong>Тип:</strong> {{ session.comment.change_type|replace('_', ' ')|title if session.comment else 'Нет' }}</p>
-                                    
-                                    {% if not session.is_commented %}
-                                    <!-- Форма для добавления комментария -->
-                                    <form method="post" action="/comment" class="mt-3">
-                                        <input type="hidden" name="username" value="{{ username }}">
-                                        <input type="hidden" name="session_id" value="{{ session.id }}">
-                                        
-                                        <div class="mb-3">
-                                            <label class="form-label">Тип изменения:</label>
-                                            <select name="change_type" class="form-select" required>
-                                                <option value="">Выберите тип...</option>
-                                                <option value="корректировка_трассы">Корректировка трассы</option>
-                                                <option value="изменения_в_продольном_профиле">Изменения в продольном профиле</option>
-                                                <option value="обновление_поперечных_сечений">Обновление поперечных сечений</option>
-                                                <option value="добавление_дорожных_сооружений">Добавление дорожных сооружений</option>
-                                                <option value="корректировка_расчетов">Корректировка расчетов</option>
-                                                <option value="изменения_в_чертежах">Изменения в чертежах</option>
-                                                <option value="обновление_спецификаций">Обновление спецификаций</option>
-                                                <option value="экологические_корректировки">Экологические корректировки</option>
-                                                <option value="сметные_изменения">Сметные изменения</option>
-                                                <option value="другое">Другое</option>
-                                            </select>
-                                        </div>
-                                        
-                                        <div class="mb-3">
-                                            <label class="form-label">Комментарий:</label>
-                                            <textarea name="content" class="form-control" rows="3" required></textarea>
-                                        </div>
-                                        
-                                        <button type="submit" class="btn btn-primary w-100">
-                                            <i class="fas fa-comment me-1"></i>Добавить
-                                        </button>
-                                    </form>
-                                    {% endif %}
+                                
+                                <div class="row mt-3">
+                                    <div class="col-md-6">
+                                        <p><strong>Начата:</strong></p>
+                                        <p><strong>Последняя активность:</strong></p>
+                                        {% if session.ended_at %}
+                                        <p><strong>Завершена:</strong></p>
+                                        {% endif %}
+                                        <p><strong>Статус:</strong></p>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <p>{{ session.started_at | format_datetime if session.started_at else 'N/A' }}</p>
+                                        <p>{{ session.last_activity | format_datetime if session.last_activity else 'N/A' }}</p>
+                                        {% if session.ended_at %}
+                                        <p>{{ session.ended_at | format_datetime if session.ended_at else 'N/A' }}</p>
+                                        {% endif %}
+                                        <p>
+                                            {% if not session.ended_at %}
+                                                <span class="badge bg-success">Активна</span>
+                                            {% elif session.is_commented %}
+                                                <span class="badge bg-info">Закомментирована</span>
+                                            {% else %}
+                                                <span class="badge bg-warning">Требует комментария</span>
+                                            {% endif %}
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                        {% endfor %}
+
+                        <!-- Комментарии -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="card-title mb-0">
+                                    <i class="fas fa-comments me-2"></i>Комментарии
+                                    {% if session.comments %}
+                                    
+                                    {% endif %}
+                                </h6>
+                            </div>
+                            <div class="card-body">
+                                {% if session.comments %}
+                                    {% for comment in session.comments %}
+                                    <div class="comment-item mb-3 p-3 border rounded">
+                                        <div class="d-flex justify-content-between align-items-start mb-2">
+                                            <strong class="text-primary">
+                                                {{ comment.change_type | replace('_', ' ') | title }}
+                                            </strong>
+                                            <small class="text-muted">{{ comment.created_at | format_datetime if comment.created_at else '' }}</small>
+                                        </div>
+                                        <p class="mb-0">{{ comment.content }}</p>
+                                    </div>
+                                    {% endfor %}
+                                {% else %}
+                                <div class="text-center py-3">
+                                    <i class="fas fa-comment-slash fa-2x text-muted mb-2"></i>
+                                    <p class="text-muted mb-0">Комментарии отсутствуют</p>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
                     </div>
+                    
+                    
                 </div>
-                {% endfor %}
-                {% else %}
-                <div class="text-center py-4">
-                    <i class="fas fa-folder-open fa-3x text-muted mb-3"></i>
-                    <p class="text-muted">Нет сессий</p>
-                </div>
-                {% endif %}
             </div>
         </div>
     </div>
 </div>
+{% endfor %}
+
+<!-- Модальные окна для комментариев -->
+{% for session in sessions %}
+{% if not session.is_commented and session.ended_at %}
+<div class="modal fade" id="commentModal{{ session.id }}" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Добавить комментарий</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" action="/comment">
+                <div class="modal-body">
+                    <input type="hidden" name="username" value="{{ username }}">
+                    <input type="hidden" name="session_id" value="{{ session.id }}">
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Тип изменения:</label>
+                        <select name="change_type" class="form-select" required>
+                            <option value="">Выберите тип изменения...</option>
+                            {% for change_type in change_types %}
+                            <option value="{{ change_type }}">{{ change_type | replace('_', ' ') | title }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Комментарий:</label>
+                        <textarea name="content" class="form-control" rows="4" 
+                                  placeholder="Опишите изменения..." required></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-comment me-1"></i>Добавить комментарий
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endfor %}
 {% endblock %}

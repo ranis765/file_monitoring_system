@@ -1,4 +1,3 @@
-
 import aiohttp
 import json
 from typing import Dict, List, Optional
@@ -21,6 +20,8 @@ class APIClient:
         try:
             async with self.session.request(method, url, **kwargs) as response:
                 print(f"Получен ответ от {url}: статус {response.status}")  # Отладка
+                if response.status == 404:
+                    return None  # Возвращаем None для 404 ошибок
                 if response.status != 200:
                     error_text = await response.text()
                     raise Exception(f"API вернул статус {response.status}: {error_text}")
@@ -54,6 +55,21 @@ class APIClient:
     async def get_file(self, file_id: str) -> Dict:
         print(f"Вызов get_file для file_id: {file_id}")  # Отладка
         return await self._request("GET", f"/api/files/{file_id}")
+    
+    async def get_session_comments(self, session_id: str) -> List[Dict]:
+        """Получить комментарии для конкретной сессии"""
+        print(f"Вызов get_session_comments для session_id: {session_id}")  # Отладка
+        
+        # Используем существующий endpoint для получения комментария по session_id
+        try:
+            result = await self._request("GET", f"/api/comments/{session_id}")
+            if result is not None:
+                # Если найден комментарий, возвращаем его в списке
+                return [result]
+            return []
+        except Exception as e:
+            print(f"Ошибка при получении комментария для сессии {session_id}: {str(e)}")
+            return []
     
     async def close(self):
         if self.session:

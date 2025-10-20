@@ -1,4 +1,3 @@
-
 {% extends "base.html" %}
 
 {% block title %}Панель управления - Менеджер сессий{% endblock %}
@@ -42,8 +41,11 @@
                                         {{ session.file_path | default('Неизвестно', true) }}
                                     </small>
                                 </p>
-                                <p><strong>Начата:</strong> {{ session.started_at[:19] if session.started_at else 'N/A' }}</p>
-                                <p><strong>Последняя активность:</strong> {{ session.last_activity[:19] if session.last_activity else 'N/A' }}</p>
+                                <p><strong>Начата:</strong> {{ session.started_at | format_datetime if session.started_at else 'N/A' }}</p>
+                                <p><strong>Последняя активность:</strong> {{ session.last_activity | format_datetime if session.last_activity else 'N/A' }}</p>
+                                {% if session.ended_at %}
+                                <p><strong>Завершена:</strong> {{ session.ended_at | format_datetime if session.ended_at else 'N/A' }}</p>
+                                {% endif %}
                                 <p><strong>Статус:</strong> 
                                     {% if not session.ended_at %}
                                         <span class="badge bg-success">Активна</span>
@@ -100,9 +102,10 @@
     </div>
 </div>
 
+<!-- Статистика -->
 <div class="row">
-    <!-- Quick Stats -->
-    <div class="col-md-3 mb-4">
+    <!-- Всего сессий -->
+    <div class="col-md-4 mb-4">
         <div class="card text-white bg-primary">
             <div class="card-body">
                 <div class="d-flex justify-content-between">
@@ -118,26 +121,9 @@
         </div>
     </div>
     
-    <div class="col-md-3 mb-4">
+    <!-- Закомментированные сессии -->
+    <div class="col-md-4 mb-4">
         <div class="card text-white bg-success">
-            <div class="card-body">
-                <div class="d-flex justify-content-between">
-                    <div>
-                        <h4 class="card-title">
-                            {{ sessions|selectattr("ended_at", "none")|list|length }}
-                        </h4>
-                        <p class="card-text">Активные сессии</p>
-                    </div>
-                    <div class="align-self-center">
-                        <i class="fas fa-play-circle fa-2x"></i>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <div class="col-md-3 mb-4">
-        <div class="card text-white bg-warning">
             <div class="card-body">
                 <div class="d-flex justify-content-between">
                     <div>
@@ -154,114 +140,21 @@
         </div>
     </div>
     
-    <div class="col-md-3 mb-4">
-        <div class="card text-white bg-info">
+    <!-- Сессии, требующие комментирования -->
+    <div class="col-md-4 mb-4">
+        <div class="card text-white bg-warning">
             <div class="card-body">
                 <div class="d-flex justify-content-between">
                     <div>
                         <h4 class="card-title">
-                            {{ sessions|map(attribute="resume_count")|sum }}
+                            {{ active_uncommented|length }}
                         </h4>
-                        <p class="card-text">Всего возобновлений</p>
+                        <p class="card-text">Требуют комментирования</p>
                     </div>
                     <div class="align-self-center">
-                        <i class="fas fa-redo fa-2x"></i>
+                        <i class="fas fa-exclamation-circle fa-2x"></i>
                     </div>
                 </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="row">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="card-title mb-0">
-                    <i class="fas fa-rocket me-2"></i>Быстрые действия
-                </h5>
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-4 mb-3">
-                        <a href="/sessions" class="btn btn-outline-primary w-100 py-3">
-                            <i class="fas fa-edit fa-2x mb-2"></i><br>
-                            Управление сессиями и комментариями
-                        </a>
-                    </div>
-                    <div class="col-md-4 mb-3">
-                        <a href="/history" class="btn btn-outline-success w-100 py-3">
-                            <i class="fas fa-history fa-2x mb-2"></i><br>
-                            Просмотр истории
-                        </a>
-                    </div>
-                    <div class="col-md-4 mb-3">
-                        <button class="btn btn-outline-info w-100 py-3" onclick="refreshData()">
-                            <i class="fas fa-sync-alt fa-2x mb-2"></i><br>
-                            Обновить данные
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="row mt-4">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="card-title mb-0">
-                    <i class="fas fa-list me-2"></i>Недавние сессии
-                </h5>
-            </div>
-            <div class="card-body">
-                {% if sessions %}
-                <div class="table-responsive">
-                    <table class="table table-striped">
-                        <thead>
-                            <tr>
-                                <th>Файл</th>
-                                <th>Начата</th>
-                                <th>Последняя активность</th>
-                                <th>Статус</th>
-                                <th>Комментарии</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for session in sessions[:5] %}
-                            <tr>
-                                <td>
-                                    <i class="fas fa-file me-1"></i>
-                                    {{ session.file_name | default('Неизвестно', true) }}
-                                </td>
-                                <td>{{ session.started_at[:19] if session.started_at else 'N/A' }}</td>
-                                <td>{{ session.last_activity[:19] if session.last_activity else 'N/A' }}</td>
-                                <td>
-                                    {% if session.ended_at %}
-                                    <span class="badge bg-secondary">Закрыта</span>
-                                    {% else %}
-                                    <span class="badge bg-success">Активна</span>
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    {% if session.is_commented %}
-                                    <i class="fas fa-check text-success"></i>
-                                    {% else %}
-                                    <i class="fas fa-times text-muted"></i>
-                                    {% endif %}
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-                {% else %}
-                <div class="text-center py-4">
-                    <i class="fas fa-folder-open fa-3x text-muted mb-3"></i>
-                    <p class="text-muted">Сессии не найдены</p>
-                </div>
-                {% endif %}
             </div>
         </div>
     </div>

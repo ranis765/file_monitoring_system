@@ -108,7 +108,7 @@ monitoring:
   
   # Настройки сессий - УМЕНЬШЕНЫ ТАЙМАУТЫ ДЛЯ ТЕСТИРОВАНИЯ
   sessions:
-    session_timeout_minutes: 3      # 1 минута для тестирования
+    session_timeout_minutes: 60      # 1 минута для тестирования
     max_session_hours: 3
     resume_window_hours: 1
   

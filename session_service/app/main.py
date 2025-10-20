@@ -1435,6 +1435,24 @@ async def update_username(
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error updating username: {str(e)}")
 
+@app.get("/api/sessions/{session_id}/comments", response_model=List[schemas.Comment])
+async def get_comments_by_session(session_id: str, db: Session = Depends(get_db)):
+    """Получает комментарии для конкретной сессии"""
+    try:
+        session_uuid = uuid.UUID(session_id)
+        
+        # Получаем комментарии для сессии
+        comments = db.query(models.Comment).filter(
+            models.Comment.session_id == session_uuid
+        ).all()
+        
+        return comments
+        
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid session ID format")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting comments: {str(e)}")
+
 @app.get("/api/user-activity/{username}")
 async def get_user_activity(username: str, db: Session = Depends(get_db)):
     """Возвращает активность пользователя"""
