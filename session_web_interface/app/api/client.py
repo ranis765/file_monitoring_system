@@ -76,5 +76,13 @@ class APIClient:
             print("Закрытие ClientSession")  # Отладка
             await self.session.close()
 
+    async def update_user_email(self, username: str, email: str) -> Dict:
+        """Обновить email пользователя"""
+        update_data = {
+            "username": username,
+            "email": email
+        }
+        return await self._request("PUT", f"/api/users/{username}/email", json=update_data)
+
 # Global API client instance
 api_client = APIClient()

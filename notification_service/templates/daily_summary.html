@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #fff3cd; padding: 15px; border-radius: 5px; text-align: center; }
+        .summary { background: #f8f9fa; padding: 20px; margin: 20px 0; border-radius: 5px; }
+        .file-item { 
+            background: white; 
+            padding: 10px; 
+            margin: 8px 0; 
+            border-left: 4px solid #ffc107;
+            border-radius: 3px;
+        }
+        .button { 
+            background: #dc3545; 
+            color: white; 
+            padding: 12px 30px; 
+            text-decoration: none; 
+            border-radius: 5px; 
+            display: inline-block; 
+            font-weight: bold;
+            margin: 10px 5px;
+        }
+        .secondary-button {
+            background: #6c757d; 
+            color: white; 
+            padding: 10px 20px; 
+            text-decoration: none; 
+            border-radius: 5px; 
+            display: inline-block;
+        }
+        .footer { margin-top: 20px; font-size: 12px; color: #666; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📋 Итоги рабочего дня</h1>
+            <p>{{ current_time.strftime('%d.%m.%Y') }}</p>
+        </div>
+        
+        <p>Уважаемый(ая) {{ user.username }},</p>
+        
+        <div class="summary">
+            <h2>Ваша активность за день:</h2>
+            
+            <div style="text-align: center; margin: 20px 0;">
+                <div style="font-size: 48px; color: #dc3545; margin: 10px 0;">
+                    {{ user.total_pending }}
+                </div>
+                <div style="font-size: 18px; color: #666;">
+                    сессий ожидают комментариев
+                </div>
+            </div>
+            
+            <h3>Файлы для комментариев:</h3>
+            {% for session in user.pending_sessions %}
+            <div class="file-item">
+                <strong>{{ session.file_name }}</strong><br>
+                <small>{{ session.file_path }}</small>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <p>Рекомендуем завершить описание изменений до начала следующего рабочего дня.</p>
+        
+        <div style="text-align: center;">
+            <a href="{{ config.base_url }}/sessions-with-comments" class="button">
+                🚀 Завершить комментирование
+            </a>
+            <br>
+            <a href="{{ config.base_url }}/user-stats/{{ user.username }}" class="secondary-button">
+                📈 Посмотреть статистику
+            </a>
+        </div>
+        
+        <div class="footer">
+            <p>С уважением,<br>File Monitoring System</p>
+            <p>Это ежедневное итоговое уведомление</p>
+        </div>
+    </div>
+</body>
+</html>

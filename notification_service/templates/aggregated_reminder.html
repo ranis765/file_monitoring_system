@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #e8f4fd; padding: 15px; border-radius: 5px; }
+        .stats { background: #f0f8ff; padding: 15px; margin: 15px 0; border-radius: 5px; }
+        .button { 
+            background: #28a745; 
+            color: white; 
+            padding: 12px 25px; 
+            text-decoration: none; 
+            border-radius: 5px; 
+            display: inline-block; 
+            font-weight: bold;
+        }
+        .footer { margin-top: 20px; font-size: 12px; color: #666; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Сводка по сессиям</h1>
+        </div>
+        
+        <p>Уважаемый(ая) {{ user.username }},</p>
+        
+        <div class="stats">
+            <h2>📊 Статистика за последние 24 часа:</h2>
+            <p><strong>Всего сессий для комментариев:</strong> {{ user.total_pending }}</p>
+            <p><strong>Файлов затронуто:</strong> {{ user.pending_sessions|length }}</p>
+        </div>
+        
+        <p>Мы заметили, что у вас накопилось несколько сессий, которые требуют комментариев. 
+           Пожалуйста, найдите время для описания внесенных изменений.</p>
+        
+        <p>
+            <a href="{{ config.base_url }}/sessions-with-comments" class="button">
+                📝 Перейти к комментированию всех сессий
+            </a>
+        </p>
+        
+        <div class="footer">
+            <p>Это агрегированное уведомление. Вы получите следующее не ранее чем через {{ config.aggregation_window_hours }} часов.</p>
+            <p>File Monitoring System • {{ current_time.strftime('%Y-%m-%d %H:%M') }}</p>
+        </div>
+    </div>
+</body>
+</html>

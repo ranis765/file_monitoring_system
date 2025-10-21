@@ -89,7 +89,29 @@
 .sort-select {
     max-width: 200px;
 }
+/* Стили для модального окна пользователя */
+.user-info-trigger {
+    cursor: pointer;
+    transition: color 0.3s ease;
+}
 
+.user-info-trigger:hover {
+    color: #6ea8fe !important;
+}
+
+.modal-content {
+    border-radius: 10px;
+}
+
+.modal-header {
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #dee2e6;
+    border-radius: 10px 10px 0 0;
+}
+
+.fa-user-circle {
+    color: #0d6efd;
+}
 /* Responsive adjustments */
 @media (max-width: 768px) {
     .container {

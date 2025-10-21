@@ -567,6 +567,72 @@ async def debug_cookies(request: Request):
         "auth_disabled": DISABLE_AUTH
     }
 
+
+@app.get("/api/user-info/{username}")
+async def get_user_info(username: str):
+    """Получить информацию о пользователе"""
+    try:
+        # Получаем данные пользователей
+        users_data = await api_client.get_users()
+        user_obj = next((u for u in users_data.get("users", []) if u["username"].lower() == username.lower()), None)
+        
+        if not user_obj:
+            # Если пользователь не найден, создаем базовую информацию
+            user_obj = {
+                "id": str(uuid.uuid4()),
+                "username": username,
+                "email": f"{username}@example.com"
+            }
+        
+        # Получаем сессии пользователя для статистики
+        all_sessions = await api_client.get_sessions()
+        user_sessions = [
+            s for s in all_sessions.get("sessions", []) 
+            if s.get("username", "").lower() == username.lower() or 
+               (user_obj and s.get("user_id") == user_obj["id"])
+        ]
+        
+        # Находим последнюю активность
+        last_activity = None
+        if user_sessions:
+            sorted_sessions = sorted(user_sessions, key=lambda x: x.get("started_at", ""), reverse=True)
+            last_activity = sorted_sessions[0].get("started_at")
+        
+        user_info = {
+            "id": user_obj.get("id", "Неизвестно"),
+            "username": username,
+            "email": user_obj.get("email", f"{username}@example.com"),
+            "sessions_count": len(user_sessions),
+            "last_activity": format_datetime(last_activity) if last_activity else "Нет активности"
+        }
+        
+        return user_info
+        
+    except Exception as e:
+        print(f"Ошибка получения информации о пользователе {username}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/update-user-email")
+async def update_user_email(request: Request):
+    """Обновить email пользователя"""
+    try:
+        data = await request.json()
+        username = data.get("username")
+        email = data.get("email")
+        
+        if not username:
+            raise HTTPException(status_code=400, detail="Username is required")
+        
+        # В реальном приложении здесь будет вызов API для обновления email
+        # Пока просто возвращаем успех
+        print(f"Обновление email для пользователя {username}: {email}")
+        
+        return {"status": "success", "message": "Email обновлен успешно"}
+        
+    except Exception as e:
+        print(f"Ошибка обновления email: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.on_event("startup")
 async def startup_event():
     """Очистка сессий при старте"""

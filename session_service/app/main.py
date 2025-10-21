@@ -8,7 +8,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(os.path.dirname(current_dir))  # Поднимаемся на уровень выше
 sys.path.insert(0, project_root)
 
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException,Request
 from sqlalchemy.orm import Session
 from shared.config_loader import get_api_config
 from . import database, models, crud, schemas
@@ -1039,7 +1039,7 @@ async def create_session(session_data: dict, db: Session = Depends(get_db)):
 async def get_users(db: Session = Depends(get_db)):
     """Получает список пользователей"""
     users = db.query(models.User).all()
-    return {"users": [{"id": str(user.id), "username": user.username} for user in users]}
+    return {"users": [{"id": str(user.id), "username": user.username, "email":user.email} for user in users]}
 
 @app.get("/api/files")
 async def get_files(db: Session = Depends(get_db)):
@@ -1510,6 +1510,216 @@ async def get_user_activity(username: str, db: Session = Depends(get_db)):
         import traceback
         print(f"🔍 Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error getting user activity: {str(e)}")
+    
+@app.get("/api/user-info/{username}")
+async def get_user_info(username: str, db: Session = Depends(get_db)):
+    """Получить информацию о пользователе"""
+    try:
+        # Получаем данные пользователя
+        user = crud.get_user_by_username(db, username)
+        
+        if not user:
+            # Если пользователь не найден, возвращаем базовую информацию
+            user_info = {
+                "id": str(uuid.uuid4()),
+                "username": username,
+                "email": f"{username}@example.com",
+                "sessions_count": 0,
+                "last_activity": "Нет активности",
+                "created_at": datetime.now().isoformat()
+            }
+            return user_info
+        
+        # Получаем сессии пользователя для статистики
+        user_sessions = db.query(models.FileSession).filter(
+            models.FileSession.user_id == user.id
+        ).all()
+        
+        # Находим последнюю активность
+        last_activity = None
+        active_sessions = [s for s in user_sessions if s.ended_at is None]
+        if user_sessions:
+            sorted_sessions = sorted(user_sessions, key=lambda x: x.last_activity, reverse=True)
+            last_activity = sorted_sessions[0].last_activity
+        
+        user_info = {
+            "id": str(user.id),
+            "username": user.username,
+            "email": user.email or f"{username}@example.com",
+            "sessions_count": len(user_sessions),
+            "active_sessions_count": len(active_sessions),
+            "last_activity": (last_activity.isoformat()) if last_activity else "Нет активности",
+            "created_at": user.created_at.isoformat() if user.created_at else datetime.now().isoformat()
+        }
+        
+        return user_info
+        
+    except Exception as e:
+        print(f"Ошибка получения информации о пользователе {username}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/update-user-email")
+async def update_user_email(
+    email_update: schemas.UserEmailUpdate,  # Используем Pydantic схему
+    db: Session = Depends(get_db)
+):
+    """Обновить email пользователя"""
+    try:
+        username = email_update.username
+        email = email_update.email
+        
+        if not username:
+            raise HTTPException(status_code=400, detail="Username is required")
+        
+        # Находим пользователя
+        user = crud.get_user_by_username(db, username)
+        
+        if not user:
+            # Если пользователь не существует, создаем нового
+            user_data = schemas.UserCreate(username=username, email=email)
+            user = crud.create_user(db, user_data)
+            print(f"✅ Создан новый пользователь: {username} с email: {email}")
+        else:
+            # Обновляем email существующего пользователя
+            old_email = user.email
+            user.email = email
+            db.commit()
+            db.refresh(user)
+            print(f"✅ Обновлен email для пользователя {username}: {old_email} -> {email}")
+        
+        return {
+            "status": "success", 
+            "message": "Email обновлен успешно",
+            "user": {
+                "id": str(user.id),
+                "username": user.username,
+                "email": user.email
+            }
+        }
+        
+    except Exception as e:
+        print(f"Ошибка обновления email: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/user-stats/{username}")
+async def get_user_stats(username: str, db: Session = Depends(get_db)):
+    """Получить статистику пользователя"""
+    try:
+        user = crud.get_user_by_username(db, username)
+        
+        if not user:
+            return {
+                "username": username,
+                "total_sessions": 0,
+                "active_sessions": 0,
+                "commented_sessions": 0,
+                "total_files_worked": 0,
+                "average_session_duration": "0 минут"
+            }
+        
+        # Получаем все сессии пользователя
+        user_sessions = db.query(models.FileSession).filter(
+            models.FileSession.user_id == user.id
+        ).all()
+        
+        # Статистика
+        total_sessions = len(user_sessions)
+        active_sessions = len([s for s in user_sessions if s.ended_at is None])
+        commented_sessions = len([s for s in user_sessions if s.is_commented])
+        
+        # Уникальные файлы
+        unique_files = set()
+        session_durations = []
+        
+        for session in user_sessions:
+            unique_files.add(session.file_id)
+            if session.ended_at and session.started_at:
+                duration = session.ended_at - session.started_at
+                session_durations.append(duration.total_seconds())
+        
+        total_files_worked = len(unique_files)
+        
+        # Средняя продолжительность сессии
+        avg_duration_seconds = sum(session_durations) / len(session_durations) if session_durations else 0
+        avg_duration_minutes = int(avg_duration_seconds / 60)
+        
+        return {
+            "username": username,
+            "total_sessions": total_sessions,
+            "active_sessions": active_sessions,
+            "commented_sessions": commented_sessions,
+            "total_files_worked": total_files_worked,
+            "average_session_duration": f"{avg_duration_minutes} минут"
+        }
+        
+    except Exception as e:
+        print(f"Ошибка получения статистики пользователя {username}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/user-sessions-stats/{username}")
+async def get_user_sessions_stats(username: str, db: Session = Depends(get_db)):
+    """Получить детальную статистику по сессиям пользователя"""
+    try:
+        user = crud.get_user_by_username(db, username)
+        
+        if not user:
+            return {
+                "username": username,
+                "sessions_by_date": [],
+                "sessions_by_file_type": [],
+                "recent_activity": []
+            }
+        
+        # Получаем все сессии пользователя
+        user_sessions = db.query(models.FileSession).filter(
+            models.FileSession.user_id == user.id
+        ).all()
+        
+        # Сессии по дате (последние 30 дней)
+        thirty_days_ago = datetime.now() - timedelta(days=30)
+        recent_sessions = [s for s in user_sessions if s.started_at >= thirty_days_ago]
+        
+        sessions_by_date = {}
+        for session in recent_sessions:
+            date_key = session.started_at.date().isoformat()
+            if date_key not in sessions_by_date:
+                sessions_by_date[date_key] = 0
+            sessions_by_date[date_key] += 1
+        
+        # Сессии по типу файлов (по расширению)
+        sessions_by_file_type = {}
+        for session in user_sessions:
+            file = crud.get_file(db, session.file_id)
+            if file:
+                file_ext = os.path.splitext(file.file_name)[1].lower() or "no_extension"
+                if file_ext not in sessions_by_file_type:
+                    sessions_by_file_type[file_ext] = 0
+                sessions_by_file_type[file_ext] += 1
+        
+        # Последняя активность
+        recent_activity = []
+        for session in sorted(user_sessions, key=lambda x: x.last_activity, reverse=True)[:10]:
+            file = crud.get_file(db, session.file_id)
+            if file:
+                recent_activity.append({
+                    "file_name": file.file_name,
+                    "file_path": file.file_path,
+                    "last_activity": session.last_activity.isoformat(),
+                    "status": "active" if session.ended_at is None else "completed",
+                    "is_commented": session.is_commented
+                })
+        
+        return {
+            "username": username,
+            "sessions_by_date": [{"date": k, "count": v} for k, v in sessions_by_date.items()],
+            "sessions_by_file_type": [{"file_type": k, "count": v} for k, v in sessions_by_file_type.items()],
+            "recent_activity": recent_activity
+        }
+        
+    except Exception as e:
+        print(f"Ошибка получения детальной статистики пользователя {username}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn

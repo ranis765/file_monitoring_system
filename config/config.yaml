@@ -1,22 +1,50 @@
-# config.yaml
-# Общие настройки
-environment: "development"
-
+environment: "production"
 # Настройки API сервера
 api_server:
-  host: "127.0.0.1"
+  host: "0.0.0.0"
   port: 8000
-  base_url: "http://localhost:8000"  # Для клиентов
-  reload: true  # Для разработки
+  base_url: "http://localhost:8000"
+
+
+# Настройки API клиента
+api_client:
+  base_url: "http://localhost:8000"
+  timeout: 10
+  retry_attempts: 3
 
 # Настройки базы данных
 database:
-  host: "localhost"
+  host: "localhost"  # Используем имя сервиса из Docker
   port: 5432
   name: "file_monitoring"
   user: "monitor_user"
   password: "secure_password_123"
   url: "postgresql://monitor_user:secure_password_123@localhost:5432/file_monitoring"
+
+# Настройки уведомлений
+notifications:
+  # SMTP настройки
+  smtp_host: "smtp.mail.ru"
+  smtp_port: 587
+  smtp_username: "mr.ranis02@mail.ru"
+  smtp_password: "ssO1IIaqPxCEOYp2AYjH"
+  smtp_use_tls: true
+  
+  # Настройки отправителя
+  sender_name: "File Monitoring System"
+  sender_email: "mr.ranis02@mail.ru"
+  
+  # Время уведомлений
+  reminder_times:
+    - "09:00"
+    - "13:00" 
+    - "17:00"
+  daily_summary_time: "19:10"
+  
+  # Настройки агрегации
+  check_interval_minutes: 5
+  aggregation_window_hours: 1
+  min_sessions_for_aggregation: 2
 
 
 agents:
@@ -28,8 +56,7 @@ agent_server:
 # Настройки мониторинга
 monitoring:
   # Папки для мониторинга
-  # watch_paths:
-  #   - "./monitor"
+ 
   watch_paths:
     - "D:/network_folder"
   
@@ -108,19 +135,16 @@ monitoring:
   
   # Настройки сессий - УМЕНЬШЕНЫ ТАЙМАУТЫ ДЛЯ ТЕСТИРОВАНИЯ
   sessions:
-    session_timeout_minutes: 60      # 1 минута для тестирования
+    session_timeout_minutes: 5      # 1 минута для тестирования
     max_session_hours: 3
     resume_window_hours: 1
   
   background_check_interval: 10     # Уменьшено до 10 секунд
 
-# Настройки API клиента
-api_client:
-  base_url: "http://localhost:8000"
-  timeout: 10
-  retry_attempts: 3
+
 
 # Настройки логирования
 logging:
   level: "INFO"
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+

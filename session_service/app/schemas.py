@@ -16,7 +16,11 @@ class User(UserBase):
     created_at: datetime
     
     model_config = ConfigDict(from_attributes=True)
+class UserEmailUpdate(BaseModel):
+    username: str
+    email: str
 
+    model_config = ConfigDict(from_attributes=True)
 # File Schemas
 class FileBase(BaseModel):
     file_path: str

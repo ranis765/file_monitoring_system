@@ -59,6 +59,33 @@ CREATE TABLE reports (
     generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Таблицы для уведомлений
+CREATE TABLE notification_preferences (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    email_notifications BOOLEAN DEFAULT TRUE,
+    daily_summary BOOLEAN DEFAULT TRUE,
+    session_reminders BOOLEAN DEFAULT TRUE,
+    aggregation_enabled BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE sent_notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    notification_type VARCHAR(50) NOT NULL,
+    session_ids TEXT,
+    subject VARCHAR(255) NOT NULL,
+    sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    delivered BOOLEAN DEFAULT TRUE
+);
+
+-- Индексы
+CREATE INDEX idx_notification_preferences_user_id ON notification_preferences(user_id);
+CREATE INDEX idx_sent_notifications_user_id ON sent_notifications(user_id);
+CREATE INDEX idx_sent_notifications_sent_at ON sent_notifications(sent_at);
+
 -- Индексы для улучшения производительности
 CREATE INDEX idx_file_sessions_user_id ON file_sessions(user_id);
 CREATE INDEX idx_file_sessions_file_id ON file_sessions(file_id);

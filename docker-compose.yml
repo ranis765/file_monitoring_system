@@ -12,6 +12,48 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - filemonitor-network
+
+  # api-server:
+  #   build: 
+  #     context: .
+  #     dockerfile: Dockerfile.api
+  #   container_name: filemonitor-api
+  #   ports:
+  #     - "8000:8000"
+  #   environment:
+  #     - ENVIRONMENT=production
+  #     - PYTHONPATH=/app
+  #   volumes:
+  #     - ./shared:/app/shared
+  #     - ./config.yaml:/app/config.yaml:ro
+  #   depends_on:
+  #     - postgres
+  #   networks:
+  #     - filemonitor-network
+  #   restart: unless-stopped
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.notifications
+    container_name: filemonitor-notifications
+    environment:
+      - ENVIRONMENT=production
+      - PYTHONPATH=/app
+    volumes:
+      - ./shared:/app/shared
+      - ./config.yaml:/app/config.yaml:ro
+    depends_on:
+      - postgres
+    networks:
+      - filemonitor-network
+    restart: unless-stopped
 
 volumes:
   postgres_data:
+
+networks:
+  filemonitor-network:
+    driver: bridge
